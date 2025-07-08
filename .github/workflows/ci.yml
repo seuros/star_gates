@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test:
+    name: Ruby 4.0
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+          bundler-cache: true
+
+      - name: Run tests
+        run: bundle exec rake test test:rails
+
+  # Security and quality checks
+  quality:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+          bundler-cache: true
+
+      - name: Run Rubocop
+        run: bundle exec rubocop
+
+      - name: Check for security vulnerabilities
+        run: |
+          gem install bundler-audit
+          bundle audit check --update
+
+      - name: Check for outdated dependencies
+        run: bundle outdated --strict
+        continue-on-error: true

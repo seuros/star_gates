@@ -1,0 +1,60 @@
+AllCops:
+  TargetRubyVersion: 4.0
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - vendor/**/*
+
+# Tests and demos intentionally describe complete scenarios.
+Metrics:
+  Exclude:
+    - test/**/*
+
+# Allow declarative state machines and introspection payloads while retaining
+# bounds on production method and class complexity.
+Metrics/AbcSize:
+  Max: 40
+Metrics/BlockLength:
+  AllowedMethods: [state_machine, state]
+  Exclude:
+    - test/**/*
+    - '**/*.gemspec'
+Metrics/ClassLength:
+  Max: 400
+Metrics/CyclomaticComplexity:
+  Max: 12
+Metrics/MethodLength:
+  Max: 40
+Metrics/ModuleLength:
+  Max: 250
+Metrics/ParameterLists:
+  CountKeywordArgs: false
+Metrics/PerceivedComplexity:
+  Max: 12
+
+# Keep named forwarding parameters and the existing DSL layout.
+Naming/BlockForwarding:
+  Enabled: false
+Naming/VariableNumber:
+  Exclude:
+    - test/**/*
+Layout/HashAlignment:
+  EnforcedLastArgumentHashStyle: always_ignore
+Style/ArgumentsForwarding:
+  Enabled: false
+Style/Documentation:
+  Enabled: false
+Style/ClassAndModuleChildren:
+  Enabled: false
+Style/OneClassPerFile:
+  Exclude:
+    - lib/star_gates.rb
+    - test/**/*
+
+# These fixtures deliberately mimic external APIs and arbitrary user objects.
+Naming/AccessorMethodName:
+  Exclude:
+    - test/**/*
+Style/OpenStructUse:
+  Exclude:
+    - test/**/*

@@ -1,0 +1,15 @@
+/.bundle/
+/.claude/
+/.ruby-lsp/
+/.serena/
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/spec/reports/
+/tmp/
+/*.gem
+/test/dummy/log/
+/test/dummy/tmp/
+.DS_Store
