@@ -1,0 +1,89 @@
+[StarGates] StarGates loaded successfully in Rails!
+[StarGates] StarGates loaded successfully in Rails!
+[StarGates] Initialized with 4 feature gates
+[StarGates] Available gates: legacy_payment, new_dashboard, experimental_ai, notification_system
+[StarGates] Total features: 4
+[StarGates] Features by status: {"disabled" => 4}
+[StarGates] StarGates loaded successfully in Rails!
+[StarGates] Initialized with 4 feature gates
+[StarGates] Available gates: legacy_payment, new_dashboard, experimental_ai, notification_system
+[StarGates] Total features: 4
+[StarGates] Features by status: {"disabled" => 4}
+[StarGates] Event: star_gates.feature_canary_disabled
+[StarGates] Duration: 0.01ms
+[StarGates] Payload: {feature: "DemoPaymentFeature", context: {}}
+[StarGates] ---
+[StarGates] StarGates loaded successfully in Rails!
+[StarGates] Initialized with 4 feature gates
+[StarGates] Available gates: legacy_payment, new_dashboard, experimental_ai, notification_system
+[StarGates] Total features: 4
+[StarGates] Features by status: {"disabled" => 4}
+Started GET "/features" for ::1 at 2025-07-12 07:09:11 +0100
+Processing by FeaturesController#index as */*
+Completed 200 OK in 11ms (Views: 1.9ms | GC: 0.0ms)
+
+
+Started GET "/application_star_gates" for ::1 at 2025-07-12 07:09:15 +0100
+Processing by ApplicationStarGatesController#index as */*
+Completed 200 OK in 6ms (Views: 0.9ms | GC: 0.0ms)
+
+
+Started POST "/demo/payment?state=enabled" for ::1 at 2025-07-12 07:09:26 +0100
+
+ArgumentError (wrong number of arguments (given 1, expected 0)):
+
+app/controllers/demo/payments_controller.rb:6:in 'process'
+Started POST "/demo/payment?state=enabled" for ::1 at 2025-07-12 07:09:32 +0100
+
+ArgumentError (wrong number of arguments (given 1, expected 0)):
+
+app/controllers/demo/payments_controller.rb:6:in 'process'
+[StarGates] StarGates loaded successfully in Rails!
+[StarGates] Initialized with 4 feature gates
+[StarGates] Available gates: legacy_payment, new_dashboard, experimental_ai, notification_system
+[StarGates] Total features: 4
+[StarGates] Features by status: {"disabled" => 4}
+Started GET "/features" for ::1 at 2025-07-12 07:11:30 +0100
+Processing by FeaturesController#index as */*
+Completed 200 OK in 10ms (Views: 1.8ms | GC: 0.0ms)
+
+
+Started GET "/demo/payment?state=enabled&amount=250" for ::1 at 2025-07-12 07:11:36 +0100
+
+ActionController::RoutingError (No route matches [GET] "/demo/payment"):
+
+Started POST "/demo/payment?state=enabled&amount=250" for ::1 at 2025-07-12 07:11:44 +0100
+Processing by Demo::PaymentsController#process_payment as */*
+  Parameters: {"state" => "enabled", "amount" => "250"}
+[StarGates] Event: star_gates.feature_enabled
+[StarGates] Duration: 0.01ms
+[StarGates] Payload: {feature: "DemoPaymentFeature", context: {}}
+[StarGates] ---
+Completed 200 OK in 9ms (Views: 4.3ms | GC: 0.0ms)
+
+
+Started GET "/application_star_gates" for ::1 at 2025-07-12 07:11:48 +0100
+Processing by ApplicationStarGatesController#index as */*
+Completed 200 OK in 3ms (Views: 0.2ms | GC: 0.0ms)
+
+
+Started GET "/application_star_gates/demo_payment_processing/introspection" for ::1 at 2025-07-12 07:11:52 +0100
+Processing by ApplicationStarGatesController#introspection as */*
+  Parameters: {"id" => "demo_payment_processing"}
+Completed 200 OK in 1ms (Views: 0.1ms | GC: 0.0ms)
+
+
+Started POST "/application_star_gates/demo_payment_processing/execute" for ::1 at 2025-07-12 07:11:56 +0100
+Processing by ApplicationStarGatesController#execute as */*
+  Parameters: {"id" => "demo_payment_processing"}
+[StarGates] Event: star_gates.feature_disabled
+[StarGates] Duration: 0.1ms
+[StarGates] Payload: {feature: "DemoPaymentFeature", context: {}}
+[StarGates] ---
+Completed 200 OK in 2ms (Views: 0.2ms | GC: 0.0ms)
+
+
+Started POST "/application_star_gates/demo_notification_system/transition" for ::1 at 2025-07-12 07:12:02 +0100
+Processing by ApplicationStarGatesController#transition as */*
+  Parameters: {"event" => "enable", "id" => "demo_notification_system"}
+Completed 200 OK in 2ms (Views: 0.1ms | GC: 0.0ms)

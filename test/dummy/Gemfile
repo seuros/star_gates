@@ -1,0 +1,20 @@
+# frozen_string_literal: true
+
+source 'https://rubygems.org'
+
+# Rails framework for dummy app
+gem 'rails', '~> 7.0'
+
+# Use the local star_gates gem
+gem 'star_gates', path: '../..'
+
+# Required for Rails
+gem 'bootsnap', require: false
+gem 'puma'
+gem 'sprockets-rails', require: false
+
+# Testing
+group :test, :development do
+  gem 'debug'
+  gem 'minitest'
+end
