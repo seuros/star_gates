@@ -16,8 +16,6 @@ require_relative 'star_gates/hexagonal/feature_aggregate'
 require_relative 'star_gates/hexagonal/feature_repository'
 require_relative 'star_gates/projections/feature_projection'
 require_relative 'star_gates/hexagonal/feature_service'
-require_relative 'star_gates/jsonrpc/base_handler'
-require_relative 'star_gates/jsonrpc/rack_app'
 require_relative 'star_gates/telemetry/telemetry_adapter'
 
 loader = Zeitwerk::Loader.for_gem
@@ -28,7 +26,6 @@ loader.ignore("#{__dir__}/star_gates/event_store")
 loader.ignore("#{__dir__}/star_gates/adapters")
 loader.ignore("#{__dir__}/star_gates/hexagonal")
 loader.ignore("#{__dir__}/star_gates/projections")
-loader.ignore("#{__dir__}/star_gates/jsonrpc")
 loader.ignore("#{__dir__}/star_gates/telemetry")
 loader.setup
 
@@ -278,17 +275,6 @@ module StarGates
       @telemetry_adapter = adapter
     end
 
-    # JSON-RPC API (legacy - will be deprecated)
-    def jsonrpc_handler
-      warn "[DEPRECATED] StarGates.jsonrpc_handler is deprecated. Use jsonrpc-rails gem with StarGates::JsonrpcRailsAdapter instead."
-      @jsonrpc_handler ||= JsonRpc::BaseHandler.new(feature_service)
-    end
-
-    def jsonrpc_rack_app
-      warn "[DEPRECATED] StarGates.jsonrpc_rack_app is deprecated. Use jsonrpc-rails gem with StarGates::JsonrpcRailsAdapter instead."
-      @jsonrpc_rack_app ||= JsonRpc::RackApp.new(feature_service)
-    end
-
     # Check if jsonrpc-rails is available
     def jsonrpc_rails_available?
       defined?(JSON_RPC) && defined?(ActionController::Base)
@@ -332,8 +318,9 @@ end
 
 # Optional jsonrpc-rails integration
 begin
+  require 'rails'
   require 'jsonrpc-rails'
   require_relative 'star_gates/jsonrpc_rails_adapter'
 rescue LoadError
-  # jsonrpc-rails not available, skip integration
+  # jsonrpc-rails or Rails not available, skip integration
 end

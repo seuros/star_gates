@@ -3,7 +3,7 @@
 require_relative '../lib/star_gates'
 
 # 🏗️ StarGates Foundation Demo
-# Demonstrates the hexagonal architecture, event sourcing, and JSON-RPC API
+# Demonstrates the hexagonal architecture and event sourcing
 
 puts '🏗️ StarGates Foundation Architecture Demo'
 puts '=' * 50
@@ -13,7 +13,6 @@ puts "\n🔧 Configuring Foundation..."
 StarGates.enable_event_sourcing!
 puts '✅ Event sourcing enabled'
 puts '✅ Hexagonal architecture configured'
-puts '✅ JSON-RPC API ready'
 
 # 2. Create features using the new service layer
 puts "\n📦 Creating Features via Service Layer..."
@@ -118,37 +117,7 @@ payment_events.each_with_index do |event, i|
   puts "  #{i + 1}. #{event.event_type} (#{event.occurred_at.strftime('%H:%M:%S')})"
 end
 
-# 9. JSON-RPC API Demo
-puts "\n🌐 JSON-RPC API Demo..."
-
-# Create a JSON-RPC request
-request = {
-  jsonrpc: '2.0',
-  method: 'feature.get',
-  params: { featureId: 'payment_v2' },
-  id: 1
-}.to_json
-
-# Handle the request
-handler = StarGates.jsonrpc_handler
-response = handler.handle_request(request)
-parsed_response = JSON.parse(response)
-
-puts 'Request: feature.get(payment_v2)'
-puts "Response: #{parsed_response['result']['state']} state, #{parsed_response['result']['transition_count']} transitions"
-
-# Another API call - get system stats
-stats_request = {
-  jsonrpc: '2.0',
-  method: 'feature.stats',
-  params: {},
-  id: 2
-}.to_json
-
-stats_response = JSON.parse(handler.handle_request(stats_request))
-puts "System stats: #{stats_response['result']['total_features']} features total"
-
-# 10. Demonstrate aggregate reconstruction from events
+# 9. Demonstrate aggregate reconstruction from events
 puts "\n🔄 Event Replay & Aggregate Reconstruction..."
 
 # Get a fresh aggregate by replaying events
@@ -161,7 +130,7 @@ puts "  Transitions: #{reconstructed_payment.transition_history.size}"
 puts "  Executions: #{reconstructed_payment.execution_history.size}"
 puts "  Evaluations: #{reconstructed_payment.evaluation_history.size}"
 
-# 11. Show the complete transition history
+# 10. Show the complete transition history
 puts "\n📜 Complete Transition History..."
 reconstructed_payment.transition_history.each_with_index do |transition, i|
   puts "#{i + 1}. #{transition[:from_state]} → #{transition[:to_state]} via #{transition[:event_name]}"
@@ -169,12 +138,12 @@ reconstructed_payment.transition_history.each_with_index do |transition, i|
   puts "   Time: #{transition[:occurred_at].strftime('%H:%M:%S.%L')}"
 end
 
-# 12. Health check
+# 11. Health check
 puts "\n❤️  Health Check..."
 puts "Feature service healthy: #{feature_service.healthy?}"
 puts "Event store healthy: #{event_store.respond_to?(:healthy?) ? event_store.healthy? : 'N/A'}"
 
-# 13. Demonstrate projection rebuilding
+# 12. Demonstrate projection rebuilding
 puts "\n🔄 Projection Rebuilding..."
 puts 'Rebuilding projections from event store...'
 feature_service.rebuild_projections!
@@ -189,7 +158,6 @@ puts "\nKey Features Demonstrated:"
 puts '✅ Event Sourcing - Complete audit trail of all changes'
 puts '✅ Hexagonal Architecture - Clean separation of concerns'
 puts '✅ CQRS - Separate read/write models with projections'
-puts '✅ JSON-RPC API - Clean, simple API for external integration'
 puts '✅ Real-time Introspection - Complete system visibility'
 puts '✅ Event Replay - Reconstruct state from event history'
 puts '✅ Projection Management - Rebuild read models on demand'

@@ -35,13 +35,13 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
 
   # Dependencies
-  spec.add_dependency 'activesupport', '>= 6.0'
+  spec.add_dependency 'activesupport', '>= 7.2'
   spec.add_dependency 'concurrent-ruby', '~> 1.1'
-  spec.add_dependency 'state_machines', '>= 0.100.0'
+  spec.add_dependency 'state_machines', '>= 0.100.2'
   spec.add_dependency 'zeitwerk', '~> 2.6'
 
   # Required dependencies
-  spec.add_dependency 'breaker_machines', '~> 0.4.0'
+  spec.add_dependency 'breaker_machines', '~> 0.5.0'
 
   # Optional dependencies
   # spec.add_dependency 'jsonrpc-rails'  # JSON-RPC API support (optional)

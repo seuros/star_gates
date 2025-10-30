@@ -30,19 +30,19 @@ module StarGates
     def last_failure_time
       # BreakerMachines stores this as last_failure_at in stats
       stats = breaker.stats
-      stats[:last_failure_at]
+      stats.last_failure_at
     end
 
     def failure_count
       # BreakerMachines stores this in stats
       stats = breaker.stats
-      stats[:failure_count] || 0
+      stats.failure_count || 0
     end
 
     def success_count
       # BreakerMachines stores this in stats
       stats = breaker.stats
-      stats[:success_count] || 0
+      stats.success_count || 0
     end
 
     def reset!
