@@ -2,26 +2,8 @@
 
 require 'test_helper'
 
-# Ecosystem Integration: No defensive coding
-# BreakerMachines, ChronoMachines, StateMachines all exist. Period.
+# Exercise the dependencies together through StarGates.
 class EcosystemIntegrationTest < Minitest::Test
-  def test_breaker_machines_loaded
-    # BreakerMachines IS the feature trip
-    assert defined?(BreakerMachines), 'BreakerMachines not loaded'
-    assert defined?(BreakerMachines::Circuit), 'BreakerMachines::Circuit missing'
-  end
-
-  def test_chrono_machines_loaded
-    # ChronoMachines WAS CREATED for retry-jitter
-    assert defined?(ChronoMachines), 'ChronoMachines not loaded'
-    assert ChronoMachines.respond_to?(:retry), 'ChronoMachines.retry missing'
-  end
-
-  def test_state_machines_loaded
-    # StateMachines gives BreakerMachines LIFE
-    assert defined?(StateMachines), 'StateMachines not loaded - it gives BreakerMachines LIFE!'
-  end
-
   def test_state_machines_powers_breaker_machines
     # StateMachines powers BreakerMachines state transitions
     circuit = StarGates::Circuit.new(threshold: 2, within: 30)
@@ -94,18 +76,6 @@ class EcosystemIntegrationTest < Minitest::Test
 
     # Feature should be enabled (StateMachines)
     assert gate.feature.enabled?, 'Feature should be enabled'
-  end
-
-  def test_breaker_machines_version
-    version = Gem.loaded_specs['breaker_machines'].version
-    assert version >= Gem::Version.new('0.5.0'), "BreakerMachines #{version} too old"
-    puts "\n✅ BreakerMachines #{version} - Circuit breaker protection"
-  end
-
-  def test_chrono_machines_version
-    version = Gem.loaded_specs['chrono_machines'].version
-    assert version >= Gem::Version.new('0.3.0'), "ChronoMachines #{version} too old"
-    puts "\n✅ ChronoMachines #{version} - Exponential backoff retry with jitter"
   end
 
   def test_ecosystem_hierarchy

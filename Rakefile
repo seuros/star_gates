@@ -1,16 +1,18 @@
 # frozen_string_literal: true
 
 require 'bundler/gem_tasks'
-require 'minitest/test_task'
+require 'shellwords'
 
-Minitest::TestTask.create do |test|
-  test.test_globs = ['test/*_test.rb']
+desc 'Run gem tests with padded_cell'
+task :test do
+  sh 'padded_cell', 'test/*_test.rb', *Shellwords.split(ENV.fetch('TESTOPTS', ''))
 end
 
-Minitest::TestTask.create('test:rails') do |test|
-  test.libs = %w[lib test/dummy/test .]
-  test.test_globs = ['test/dummy/test/**/*_test.rb']
-  test.test_prelude = 'require_relative "test/dummy/test/test_helper"'
+namespace :test do
+  desc 'Run Rails integration tests with padded_cell'
+  task :rails do
+    sh 'padded_cell', 'test/dummy/test', *Shellwords.split(ENV.fetch('TESTOPTS', ''))
+  end
 end
 
 task default: [:test, 'test:rails']

@@ -180,11 +180,13 @@ bundle exec rake test:rails
 dictator lint .
 ```
 
-Gem tests and Rails integration tests run in separate processes. `bundle exec rake`
-runs both suites. To run only the gem tests:
+Tests run with padded_cell and Minitest 6. Gem tests and Rails integration tests
+run in separate processes. `bundle exec rake` runs both suites. To select gem tests
+directly or pass runner options:
 
 ```sh
-bundle exec ruby -Itest -e 'Dir["test/*_test.rb"].sort.each { |file| require_relative file }'
+bundle exec padded_cell test/gate_test.rb
+bundle exec rake test TESTOPTS='-j 4 --seed 1234'
 ```
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.

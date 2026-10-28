@@ -13,6 +13,7 @@
 - Move demos into the Rails dummy app and rewrite ship systems as StarGates gates.
 - Run gem and Rails integration tests separately, with explicit test discovery and Rails setup.
 - Use the Dictator GitHub Action and a project decree for structural linting.
+- Run both test suites with padded_cell and Minitest 6.
 
 ### Fixed
 
