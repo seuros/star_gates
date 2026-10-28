@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 (2026-10-28)
+
 ### Changed
 
 - Use explicit rollout `key:` and `groups:` context. Group predicates receive the
