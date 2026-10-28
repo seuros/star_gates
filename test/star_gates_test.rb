@@ -41,8 +41,8 @@ class TestStarGates < Minitest::Test
       end
     end
 
-    user1 = MockUser.new(1)
-    user2 = MockUser.new(2)
+    user1 = MockUser.new(id: 1, groups: [])
+    user2 = MockUser.new(id: 2, groups: [])
 
     result1 = StarGates[:feature_gate].call(user: user1)
     result2 = StarGates[:feature_gate].call(user: user2)

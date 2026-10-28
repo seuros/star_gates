@@ -1,12 +1,11 @@
 # frozen_string_literal: true
 
 require 'test_helper'
-require 'ostruct'
 require_relative 'dummy/demos/payment_feature'
 
 class PaymentFeatureExampleTest < ActiveSupport::TestCase
   def setup
-    @user = OpenStruct.new(id: 123, groups: [:beta_users])
+    @user = MockUser.new(id: 123, groups: [:beta_users])
     @service = StarGates::Examples::PaymentService.new(
       user: @user,
       amount: 1000,

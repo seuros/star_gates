@@ -9,8 +9,8 @@ class SpaceFleetTest < Minitest::Test
   def setup
     super
     @ship = Spaceship.new('SG Atlas', 'SG-1')
-    @pilot = MockUser.new(1, [:pilots])
-    @passenger = MockUser.new(2, [:passengers])
+    @pilot = MockUser.new(id: 1, groups: [:pilots])
+    @passenger = MockUser.new(id: 2, groups: [:passengers])
   end
 
   def test_systems_are_registered_star_gates_with_linked_features_and_circuits

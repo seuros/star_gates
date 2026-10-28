@@ -367,7 +367,7 @@ class V010RefactoringTest < Minitest::Test
 
     # Should work end-to-end
     gate.feature.rollout_canary
-    premium_user = MockUser.new(1, [:premium])
+    premium_user = MockUser.new(id: 1, groups: [:premium])
 
     result = gate.call(user: premium_user)
     assert_includes ['payment processed', 'payment queued'], result

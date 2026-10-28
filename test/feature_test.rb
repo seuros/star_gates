@@ -21,8 +21,8 @@ class TestFeature < Minitest::Test
     feature.rollout_canary
     assert feature.enabled?
 
-    user1 = MockUser.new(1)
-    user2 = MockUser.new(2)
+    user1 = MockUser.new(id: 1, groups: [])
+    user2 = MockUser.new(id: 2, groups: [])
 
     result1 = feature.enabled_for?(user: user1)
     result2 = feature.enabled_for?(user: user2)
@@ -41,8 +41,8 @@ class TestFeature < Minitest::Test
     # Once enabled, rollout percentage doesn't matter
     feature.enable
     assert feature.enabled?
-    assert feature.enabled_for?(user: MockUser.new(1))
-    assert feature.enabled_for?(user: MockUser.new(2))
+    assert feature.enabled_for?(user: MockUser.new(id: 1, groups: []))
+    assert feature.enabled_for?(user: MockUser.new(id: 2, groups: []))
   end
 
   def test_feature_group_targeting
@@ -55,8 +55,8 @@ class TestFeature < Minitest::Test
     feature.rollout_canary
     assert feature.enabled?
 
-    beta_user = MockUser.new(1, [:beta])
-    regular_user = MockUser.new(2, [:regular])
+    beta_user = MockUser.new(id: 1, groups: [:beta])
+    regular_user = MockUser.new(id: 2, groups: [:regular])
 
     assert feature.enabled_for?(user: beta_user)
     refute feature.enabled_for?(user: regular_user)
@@ -72,8 +72,8 @@ class TestFeature < Minitest::Test
     feature.rollout_canary
     assert feature.enabled?
 
-    even_user = MockUser.new(2)
-    odd_user = MockUser.new(1)
+    even_user = MockUser.new(id: 2, groups: [])
+    odd_user = MockUser.new(id: 1, groups: [])
 
     assert feature.enabled_for?(user: even_user)
     refute feature.enabled_for?(user: odd_user)

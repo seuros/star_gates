@@ -133,8 +133,7 @@ module StarGates
         puts "\n🐛 Debugging & Troubleshooting"
         puts '-' * 30
 
-        require 'ostruct'
-        test_user = OpenStruct.new(id: 500, groups: [:regular])
+        test_user = StarGates::Feature::MockUser.new(id: 500, groups: [:regular])
 
         [@payment_feature, @dashboard_feature, @experimental_feature].each do |feature|
           puts "\n🔧 Debugging #{feature.feature_name}:"

@@ -143,11 +143,9 @@ class TestLLMIntrospection < Minitest::Test
   end
 
   def test_user_simulation_llm_debugging
-    require 'ostruct'
-
     # Test user scenarios for LLM troubleshooting
-    beta_user = OpenStruct.new(id: 123, groups: [:beta_users])
-    regular_user = OpenStruct.new(id: 456, groups: [:regular])
+    beta_user = MockUser.new(id: 123, groups: [:beta_users])
+    regular_user = MockUser.new(id: 456, groups: [:regular])
 
     # Beta user simulation
     beta_simulation = @payment_feature.simulate_for_user(
@@ -177,10 +175,8 @@ class TestLLMIntrospection < Minitest::Test
   end
 
   def test_eligibility_debugging_llm_insights
-    require 'ostruct'
-
     # Detailed debugging for LLM analysis
-    user = OpenStruct.new(id: 500, groups: [:regular])
+    user = MockUser.new(id: 500, groups: [:regular])
 
     debug_info = @payment_feature.eligibility_debug(user: user)
 

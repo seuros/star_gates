@@ -15,11 +15,4 @@ class Minitest::Test
   end
 end
 
-class MockUser
-  attr_reader :id, :groups
-
-  def initialize(id, groups = [])
-    @id = id
-    @groups = groups
-  end
-end
+MockUser = StarGates::Feature::MockUser

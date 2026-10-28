@@ -99,14 +99,12 @@ end
 
 # Demo script when file is run directly
 if __FILE__ == $PROGRAM_NAME
-  require 'ostruct'
-
   puts '💳 Payment Feature Demo'
   puts '=' * 30
 
   # Create test users
-  beta_user = OpenStruct.new(id: 123, groups: [:beta_users])
-  regular_user = OpenStruct.new(id: 456, groups: [:regular])
+  beta_user = StarGates::Feature::MockUser.new(id: 123, groups: [:beta_users])
+  regular_user = StarGates::Feature::MockUser.new(id: 456, groups: [:regular])
 
   # Create payment services
   beta_payment = StarGates::Examples::PaymentService.new(

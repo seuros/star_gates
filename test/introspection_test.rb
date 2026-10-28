@@ -1,12 +1,11 @@
 # frozen_string_literal: true
 
 require 'test_helper'
-require 'ostruct'
 
 class TestIntrospection < Minitest::Test
   def setup
     @feature = StarGates::Feature.new(rollout: 25, group: :beta_users)
-    @user = OpenStruct.new(id: 123, groups: [:beta_users])
+    @user = MockUser.new(id: 123, groups: [:beta_users])
     @context = { user: @user }
   end
 

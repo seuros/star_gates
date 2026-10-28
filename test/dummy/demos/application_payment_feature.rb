@@ -171,8 +171,6 @@ end
 
 # Demo script when file is run directly
 if __FILE__ == $PROGRAM_NAME
-  require 'ostruct'
-
   puts '🚀 ApplicationStarGate Payment Feature Demo with ActiveSupport'
   puts '=' * 60
 
@@ -186,8 +184,8 @@ if __FILE__ == $PROGRAM_NAME
   end
 
   # Create test users
-  premium_user = OpenStruct.new(id: 123, groups: [:premium_users])
-  regular_user = OpenStruct.new(id: 456, groups: [:regular])
+  premium_user = StarGates::Feature::MockUser.new(id: 123, groups: [:premium_users])
+  regular_user = StarGates::Feature::MockUser.new(id: 456, groups: [:regular])
 
   # Create enhanced payment services
   premium_payment = StarGates::Examples::EnhancedPaymentService.new(

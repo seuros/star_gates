@@ -123,7 +123,7 @@ class TestGate < Minitest::Test
       run_block: -> { 'enabled' }
     )
 
-    user = MockUser.new(1)
+    user = MockUser.new(id: 1, groups: [])
     result = gate.enabled_for?(user: user)
     assert [true, false].include?(result)
   end

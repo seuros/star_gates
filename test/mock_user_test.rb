@@ -91,7 +91,7 @@ class MockUserTest < Minitest::Test
   # Performance characteristics
   # ============================================================================
 
-  def test_data_define_performance_vs_openstruct
+  def test_data_define_construction_performance
     require 'benchmark'
 
     iterations = 10_000
@@ -104,8 +104,6 @@ class MockUserTest < Minitest::Test
       end
     end
 
-    # Data.define should be significantly faster than OpenStruct
-    # (OpenStruct is 3-5x slower typically)
     puts "\nData.define performance: #{(data_define_time * 1000).round(2)}ms for #{iterations} iterations"
 
     assert data_define_time < 0.1, 'Data.define should be fast'
@@ -116,7 +114,6 @@ class MockUserTest < Minitest::Test
 
     user = StarGates::Feature::MockUser.new(id: 123, groups: %i[admin beta])
 
-    # Data.define objects are more memory efficient than OpenStruct
     memsize = ObjectSpace.memsize_of(user)
 
     # Should be relatively small (< 200 bytes typically)

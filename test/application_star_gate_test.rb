@@ -84,7 +84,7 @@ class TestApplicationStarGate < Minitest::Test
     feature.enable
 
     # Execute feature to trigger notifications
-    context = { user: OpenStruct.new(id: 123) }
+    context = { user: MockUser.new(id: 123, groups: []) }
     result = feature.execute(context) { 'test result' }
 
     assert_equal 'test result', result
