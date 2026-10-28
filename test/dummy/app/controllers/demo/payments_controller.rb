@@ -41,7 +41,7 @@ class Demo::PaymentsController < ApplicationController
   private
 
   def setup_payment_feature
-    @payment_feature = DemoPaymentFeature.new(rollout: 50, group: :beta_users)
+    @payment_feature = DemoPaymentFeature.new(rollout: 50, group: :beta)
 
     # Set state based on params for testing
     case params[:state]

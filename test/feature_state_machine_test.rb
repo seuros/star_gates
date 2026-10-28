@@ -4,9 +4,8 @@ require 'test_helper'
 
 class TestFeatureStateMachine < Minitest::Test
   def setup
-    @feature = StarGates::Feature.new(rollout: 50, group: :beta_users)
-    @user = MockUser.new(id: 123, groups: [:beta_users])
-    @context = { user: @user }
+    @feature = StarGates::Feature.new(rollout: 50, group: :beta)
+    @context = { key: 123, groups: [:beta] }
   end
 
   def test_initial_state_is_disabled
@@ -46,7 +45,7 @@ class TestFeatureStateMachine < Minitest::Test
     assert @feature.enabled?
   end
 
-  def test_canary_state_execute_with_eligible_user
+  def test_canary_state_execute_with_eligible_context
     @feature.rollout_canary
 
     # Mock the rollout eligibility to return true
@@ -56,7 +55,7 @@ class TestFeatureStateMachine < Minitest::Test
     assert_equal 'new feature logic', result
   end
 
-  def test_canary_state_execute_with_ineligible_user
+  def test_canary_state_execute_with_ineligible_context
     @feature.rollout_canary
 
     # Mock the rollout eligibility to return false
@@ -66,14 +65,14 @@ class TestFeatureStateMachine < Minitest::Test
     assert_nil result
   end
 
-  def test_canary_state_ui_component_with_eligible_user
+  def test_canary_state_ui_component_with_eligible_context
     @feature.rollout_canary
     @feature.define_singleton_method(:eligible_for_rollout?) { |_context| true }
 
     assert_equal 'feature_component', @feature.ui_component
   end
 
-  def test_canary_state_ui_component_with_ineligible_user
+  def test_canary_state_ui_component_with_ineligible_context
     @feature.rollout_canary
     @feature.define_singleton_method(:eligible_for_rollout?) { |_context| false }
 
@@ -115,7 +114,7 @@ class TestFeatureStateMachine < Minitest::Test
 
     # When canary, should respect rollout logic
     @feature.rollout_canary
-    # This will depend on the user hash, but we can test the method exists
+    # Eligibility depends on the supplied context.
     assert_respond_to @feature, :enabled_for?
   end
 end

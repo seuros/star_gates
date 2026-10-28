@@ -27,15 +27,16 @@ module StarGates
 
     # Example service class using the PaymentFeature
     class PaymentService
-      def initialize(user:, amount:, currency: 'USD')
-        @user = user
+      def initialize(key:, amount:, groups: [], currency: 'USD')
+        @key = key
+        @groups = groups
         @amount = amount
         @currency = currency
-        @payment_feature = PaymentFeature.new(rollout: 25, group: :beta_users)
+        @payment_feature = PaymentFeature.new(rollout: 25, group: :beta)
       end
 
       def process_payment
-        context = { user: @user, amount: @amount, currency: @currency }
+        context = { key: @key, groups: @groups, amount: @amount, currency: @currency }
 
         # Execute the feature with context
         result = @payment_feature.execute(context) do
@@ -53,12 +54,12 @@ module StarGates
       end
 
       def payment_ui_component
-        context = { user: @user, amount: @amount, currency: @currency }
+        context = { key: @key, groups: @groups, amount: @amount, currency: @currency }
         @payment_feature.ui_component(context)
       end
 
       def payment_config(key)
-        context = { user: @user, amount: @amount, currency: @currency }
+        context = { key: @key, groups: @groups, amount: @amount, currency: @currency }
         @payment_feature.config_value(key, context)
       end
 
@@ -102,19 +103,17 @@ if __FILE__ == $PROGRAM_NAME
   puts '💳 Payment Feature Demo'
   puts '=' * 30
 
-  # Create test users
-  beta_user = StarGates::Feature::MockUser.new(id: 123, groups: [:beta_users])
-  regular_user = StarGates::Feature::MockUser.new(id: 456, groups: [:regular])
-
   # Create payment services
   beta_payment = StarGates::Examples::PaymentService.new(
-    user: beta_user,
+    key: 'account:123',
+    groups: [:beta],
     amount: 100.00,
     currency: 'USD'
   )
 
   regular_payment = StarGates::Examples::PaymentService.new(
-    user: regular_user,
+    key: 'account:456',
+    groups: [:regular],
     amount: 50.00,
     currency: 'USD'
   )
@@ -123,30 +122,30 @@ if __FILE__ == $PROGRAM_NAME
 
   # Test disabled state (default)
   puts "\n📊 DISABLED State:"
-  puts "Beta user status: #{beta_payment.feature_status}"
-  puts "Regular user status: #{regular_payment.feature_status}"
+  puts "Beta account status: #{beta_payment.feature_status}"
+  puts "Regular account status: #{regular_payment.feature_status}"
 
   # Move to canary state
   beta_payment.instance_variable_get(:@payment_feature).rollout_canary
   regular_payment.instance_variable_get(:@payment_feature).rollout_canary
 
-  puts "\n📊 CANARY State (25% rollout, beta_users group):"
-  puts "Beta user status: #{beta_payment.feature_status}"
-  puts "Regular user status: #{regular_payment.feature_status}"
+  puts "\n📊 CANARY State (beta group):"
+  puts "Beta account status: #{beta_payment.feature_status}"
+  puts "Regular account status: #{regular_payment.feature_status}"
 
   # Process payments
   puts "\n💰 Processing payments..."
   beta_result = beta_payment.process_payment
   regular_result = regular_payment.process_payment
 
-  puts "Beta user payment: #{beta_result}"
-  puts "Regular user payment: #{regular_result}"
+  puts "Beta account payment: #{beta_result}"
+  puts "Regular account payment: #{regular_result}"
 
   # Move to enabled state
   beta_payment.instance_variable_get(:@payment_feature).enable
 
   puts "\n📊 ENABLED State:"
-  puts "Beta user status: #{beta_payment.feature_status}"
+  puts "Beta account status: #{beta_payment.feature_status}"
 
   # Process payment with enabled feature
   puts "\n💰 Processing payment with enabled feature..."

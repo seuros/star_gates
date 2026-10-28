@@ -40,13 +40,12 @@ module StarGates
       end
 
       # Feature flag specific metrics
-      def record_feature_evaluation(feature_id, eligible, user_context, execution_time_ms = nil)
+      def record_feature_evaluation(feature_id, eligible, _context, execution_time_ms = nil)
         return unless enabled?
 
         tags = {
           feature_id: feature_id,
-          eligible: eligible,
-          user_type: extract_user_type(user_context)
+          eligible: eligible
         }
 
         record_counter('star_gates.feature.evaluation', 1, tags: tags)
@@ -154,19 +153,6 @@ module StarGates
       end
 
       private
-
-      def extract_user_type(user_context)
-        user = user_context[:user] if user_context.is_a?(Hash)
-        return 'unknown' unless user
-
-        if user.respond_to?(:groups) && user.groups.is_a?(Array)
-          return 'beta' if user.groups.include?(:beta_users)
-          return 'admin' if user.groups.include?(:admin)
-          return 'premium' if user.groups.include?(:premium)
-        end
-
-        'regular'
-      end
 
       attr_reader :config
     end

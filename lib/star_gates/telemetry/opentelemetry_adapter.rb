@@ -15,12 +15,11 @@ module StarGates
       end
 
       # OpenTelemetry-specific methods
-      def trace_feature_evaluation(feature_id, user_context, &block)
+      def trace_feature_evaluation(feature_id, _context, &block)
         return block.call unless enabled?
 
         @tracer.in_span('feature.evaluate', attributes: {
                           'feature.id' => feature_id,
-                          'feature.user_type' => extract_user_type(user_context),
                           'service.name' => @service_name,
                           'service.version' => @service_version
                         }) do |span|
@@ -192,13 +191,12 @@ module StarGates
       end
 
       # Override specific methods to use pre-created instruments
-      def record_feature_evaluation(feature_id, eligible, user_context, execution_time_ms = nil)
+      def record_feature_evaluation(feature_id, eligible, _context, execution_time_ms = nil)
         return unless enabled?
 
         attributes = {
           'feature.id' => feature_id.to_s,
           'feature.eligible' => eligible.to_s,
-          'feature.user_type' => extract_user_type(user_context),
           'service.name' => @service_name,
           'service.version' => @service_version
         }

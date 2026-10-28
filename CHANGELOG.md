@@ -4,6 +4,9 @@
 
 ### Changed
 
+- Use explicit rollout `key:` and `groups:` context. Group predicates receive the
+  full context; simulation, debugging, and scenario analysis use key-based inputs
+  and results. Remove user-specific helpers and telemetry labels.
 - Require Ruby 4.0 or newer.
 - Require StateMachines 0.202.0 or newer.
 - Change the license to BSD-3-Clause.
@@ -17,6 +20,9 @@
 
 ### Fixed
 
+- Keep percentage rollout cohorts stable across workers and restarts with CRC32
+  key buckets. Upgrading reassigns cohorts previously based on Ruby's
+  process-randomized string hashes.
 - Correct dummy-app feature routing, persistent feature transitions, and circuit statistics.
 - Make weather demo failures explicit instead of random.
 

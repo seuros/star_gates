@@ -15,11 +15,11 @@ Rails.application.config.after_initialize do
   # Define some example feature flags using the DSL (simplified - no circuits for now)
   StarGates.define do
     gate :legacy_payment do
-      feature rollout: 0, group: :beta_users
+      feature rollout: 0, group: :beta
     end
 
     gate :new_dashboard do
-      feature rollout: 25, group: :premium_users
+      feature rollout: 25, group: :premium
     end
 
     gate :experimental_ai do

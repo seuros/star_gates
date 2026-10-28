@@ -14,5 +14,3 @@ class Minitest::Test
     StarGates.reset!
   end
 end
-
-MockUser = StarGates::Feature::MockUser

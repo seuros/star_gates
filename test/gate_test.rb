@@ -105,13 +105,13 @@ class TestGate < Minitest::Test
       :context_fallback_gate,
       feature: feature,
       run_block: -> { 'never runs' },
-      fallback_block: ->(context) { "Fallback for #{context[:user]}" }
+      fallback_block: ->(context) { "Fallback for #{context[:key]}" }
     )
 
     # With state machine, disabled features return nil from execute
     # Which should trigger the fallback
-    result = gate.call(user: 'Alice')
-    assert_equal 'Fallback for Alice', result
+    result = gate.call(key: 'account:1')
+    assert_equal 'Fallback for account:1', result
   end
 
   def test_gate_enabled_for_with_context
@@ -123,8 +123,7 @@ class TestGate < Minitest::Test
       run_block: -> { 'enabled' }
     )
 
-    user = MockUser.new(id: 1, groups: [])
-    result = gate.enabled_for?(user: user)
+    result = gate.enabled_for?(key: 1)
     assert [true, false].include?(result)
   end
 end

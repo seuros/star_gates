@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'zlib'
 require 'state_machines'
 require 'concurrent'
 
@@ -120,17 +121,15 @@ module StarGates
       !disabled?
     end
 
-    # Check if user is eligible for rollout based on percentage and group
     def eligible_for_rollout?(context = {})
       return group_matches?(context) if group_matcher
       return false if rollout_percentage.zero?
       return true if rollout_percentage == 100
 
-      user_id = extract_user_id(context)
-      return false unless user_id
+      key = rollout_key(context)
+      return false if key.nil?
 
-      user_hash = hash_user_id(user_id)
-      (user_hash % 100) < rollout_percentage
+      (hash_key(key) % 100) < rollout_percentage
     end
 
     # Configuration methods for state-specific behavior
@@ -175,9 +174,9 @@ module StarGates
     def summary
       case status
       when 'disabled'
-        "Feature '#{feature_name}' is DISABLED. No users have access."
+        "Feature '#{feature_name}' is DISABLED. No keys are eligible."
       when 'enabled'
-        "Feature '#{feature_name}' is ENABLED for all users (100% rollout)."
+        "Feature '#{feature_name}' is ENABLED for all keys (100% rollout)."
       when 'canary'
         if group_matcher
           "Feature '#{feature_name}' is in CANARY mode for group #{group_matcher} (#{rollout_percentage}% rollout)."
@@ -202,20 +201,15 @@ module StarGates
       }
     end
 
-    # Mock user struct for testing (Data.define is Ruby 3.2+)
-    MockUser = Data.define(:id, :groups) unless defined?(self::MockUser)
-
-    # Test what a specific user would experience
-    def simulate_for_user(user_id:, user_groups: [])
-      mock_user = MockUser.new(id: user_id, groups: user_groups)
-      context = { user: mock_user }
+    def simulate(key:, groups: [], **attributes)
+      context = attributes.merge(key: key, groups: groups)
 
       eligible = enabled_for?(context)
       ui_component_result = ui_component(context)
 
       {
-        user_id: user_id,
-        user_groups: user_groups,
+        key: key,
+        groups: groups,
         eligible: eligible,
         reason: eligibility_reason(context),
         ui_component: ui_component_result,
@@ -224,13 +218,11 @@ module StarGates
       }
     end
 
-    # Debug why a user is or isn't eligible
-    def eligibility_debug(user:)
-      context = { user: user }
-      user_id = extract_user_id(context)
+    def eligibility_debug(**context)
+      key = rollout_key(context)
 
       debug_info = {
-        user_id: user_id,
+        key: key,
         feature_status: status,
         rollout_percentage: rollout_percentage,
         group_matcher: group_matcher,
@@ -246,18 +238,18 @@ module StarGates
         if group_matcher
           group_match = group_matches?(context)
           debug_info[:group_match] = group_match
-          debug_info[:reason] = group_match ? 'User matches group criteria' : 'User does not match group criteria'
-        elsif user_id
-          user_hash = hash_user_id(user_id)
-          debug_info[:user_hash] = user_hash
-          debug_info[:hash_modulo] = user_hash % 100
-          debug_info[:reason] = if (user_hash % 100) < rollout_percentage
-                                  "User hash #{user_hash % 100} is within rollout #{rollout_percentage}%"
+          debug_info[:reason] = group_match ? 'Context matches group criteria' : 'Context does not match group criteria'
+        elsif !key.nil?
+          key_hash = hash_key(key)
+          debug_info[:key_hash] = key_hash
+          debug_info[:hash_modulo] = key_hash % 100
+          debug_info[:reason] = if (key_hash % 100) < rollout_percentage
+                                  "Key hash #{key_hash % 100} is within rollout #{rollout_percentage}%"
                                 else
-                                  "User hash #{user_hash % 100} is outside rollout #{rollout_percentage}%"
+                                  "Key hash #{key_hash % 100} is outside rollout #{rollout_percentage}%"
                                 end
         else
-          debug_info[:reason] = 'No user ID found in context'
+          debug_info[:reason] = 'No rollout key found in context'
         end
       end
 
@@ -265,21 +257,20 @@ module StarGates
     end
 
     # Test different rollout scenarios
-    def test_rollout_scenarios(percentages, sample_user_ids: (1..1000).to_a.sample(100))
+    def test_rollout_scenarios(percentages, sample_keys: (1..1000).to_a.sample(100))
       scenarios = {}
 
       percentages.each do |percentage|
         eligible_count = 0
-        sample_user_ids.each do |user_id|
-          user_hash = hash_user_id(user_id)
-          eligible_count += 1 if (user_hash % 100) < percentage
+        sample_keys.each do |key|
+          eligible_count += 1 if (hash_key(key) % 100) < percentage
         end
 
         scenarios[percentage] = {
           percentage: percentage,
-          sample_size: sample_user_ids.size,
-          eligible_users: eligible_count,
-          estimated_percentage: (eligible_count.to_f / sample_user_ids.size * 100).round(2)
+          sample_size: sample_keys.size,
+          eligible_keys: eligible_count,
+          estimated_percentage: (eligible_count.to_f / sample_keys.size * 100).round(2)
         }
       end
 
@@ -367,7 +358,7 @@ module StarGates
       when 'enabled'
         'Feature is fully enabled'
       when 'canary'
-        eligible_for_rollout?(context) ? 'User is eligible for rollout' : 'User is not eligible for rollout'
+        eligible_for_rollout?(context) ? 'Context is eligible for rollout' : 'Context is not eligible for rollout'
       else
         "Unknown status: #{status}"
       end
@@ -384,34 +375,23 @@ module StarGates
     def group_matches?(context)
       return false unless group_matcher
 
-      user = context[:user]
-      return false unless user
-
       case group_matcher
       when Symbol
-        user.respond_to?(:groups) && user.groups.include?(group_matcher)
+        Array(context[:groups]).include?(group_matcher)
       when Proc
-        group_matcher.call(user)
+        group_matcher.call(context)
       else
         false
       end
     end
 
-    def extract_user_id(context)
-      user = context[:user]
-      return nil unless user
-
-      if user.respond_to?(:id)
-        user.id
-      elsif user.respond_to?(:user_id)
-        user.user_id
-      elsif user.is_a?(String) || user.is_a?(Integer)
-        user
-      end
+    def rollout_key(context)
+      key = context[:key]
+      key if key.is_a?(String) || key.is_a?(Integer)
     end
 
-    def hash_user_id(user_id)
-      user_id.to_s.hash.abs
+    def hash_key(key)
+      Zlib.crc32(key.to_s)
     end
 
     # Record state transition with timestamp and metadata

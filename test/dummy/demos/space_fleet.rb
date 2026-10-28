@@ -11,12 +11,10 @@ require_relative '../app/models/rmns_atlas_monkey'
 module StarGates
   module Examples
     class SpaceFleetDemo
-      CrewMember = Data.define(:id, :groups)
-
       def self.run(output: $stdout)
         ship = Spaceship.new('SG Atlas')
-        pilot = CrewMember.new(id: 1, groups: [:pilots])
-        passenger = CrewMember.new(id: 2, groups: [:passengers])
+        pilot = { key: 'crew:1', groups: [:pilots] }
+        passenger = { key: 'crew:2', groups: [:passengers] }
         warp = ship.gate(:warp_drive)
 
         output.puts 'StarGates Space Fleet'
@@ -24,26 +22,26 @@ module StarGates
         output.puts "Underlying breaker: #{warp.circuit.breaker.class}"
 
         warp.feature.disable
-        output.puts "Disabled: #{ship.engage_warp('Alpha Centauri', pilot: pilot)}"
+        output.puts "Disabled: #{ship.engage_warp('Alpha Centauri', **pilot)}"
 
         warp.feature.rollout_canary
-        output.puts "Pilot canary: #{ship.engage_warp('Alpha Centauri', pilot: pilot)}"
-        output.puts "Passenger fallback: #{ship.engage_warp('Alpha Centauri', pilot: passenger)}"
+        output.puts "Pilot canary: #{ship.engage_warp('Alpha Centauri', **pilot)}"
+        output.puts "Passenger fallback: #{ship.engage_warp('Alpha Centauri', **passenger)}"
 
         warp.feature.enable
-        output.puts "Full rollout: #{ship.engage_warp('Alpha Centauri', pilot: passenger)}"
+        output.puts "Full rollout: #{ship.engage_warp('Alpha Centauri', **passenger)}"
 
         # Failures exercise the real circuit, not a manual feature transition.
-        warp.circuit.threshold.times { ship.engage_warp(:unstable_sector, pilot: pilot) }
+        warp.circuit.threshold.times { ship.engage_warp(:unstable_sector, **pilot) }
         output.puts "Automatic rollback: #{warp.feature.status}; circuit open: #{warp.open?}"
-        output.puts "Safe propulsion: #{ship.engage_warp('Alpha Centauri', pilot: pilot)}"
+        output.puts "Safe propulsion: #{ship.engage_warp('Alpha Centauri', **pilot)}"
 
         # Repair and operator approval are explicit. Resetting a circuit does not
         # silently restore a feature to full rollout.
         warp.circuit.reset!
-        output.puts "Repaired, pilot canary: #{ship.engage_warp('Alpha Centauri', pilot: pilot)}"
+        output.puts "Repaired, pilot canary: #{ship.engage_warp('Alpha Centauri', **pilot)}"
         warp.feature.enable
-        output.puts "Operator-approved rollout: #{ship.engage_warp('Alpha Centauri', pilot: passenger)}"
+        output.puts "Operator-approved rollout: #{ship.engage_warp('Alpha Centauri', **passenger)}"
         transitions = warp.feature.transition_history[:transitions].map { |entry| entry[:to_state] }
         output.puts "Feature transitions: #{transitions}"
 

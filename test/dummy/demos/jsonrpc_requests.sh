@@ -13,7 +13,7 @@ curl --fail-with-body -X POST "$endpoint" \
     "params": {
       "featureId": "new_checkout",
       "rollout": 25,
-      "group": "beta_users",
+      "group": "beta",
       "metadata": { "team": "payments", "description": "New checkout flow" }
     },
     "id": 1

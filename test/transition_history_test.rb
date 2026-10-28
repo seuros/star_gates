@@ -4,7 +4,7 @@ require 'test_helper'
 
 class TestTransitionHistory < Minitest::Test
   def setup
-    @feature = StarGates::Feature.new(rollout: 25, group: :beta_users)
+    @feature = StarGates::Feature.new(rollout: 25, group: :beta)
   end
 
   def test_feature_initializes_with_empty_transition_history

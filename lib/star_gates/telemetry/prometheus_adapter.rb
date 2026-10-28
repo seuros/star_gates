@@ -48,7 +48,7 @@ module StarGates
         @registry[:feature_evaluations] = @prometheus.counter(
           :"#{@metric_prefix}_feature_evaluations_total",
           docstring: 'Total number of feature flag evaluations',
-          labels: %i[feature_id eligible user_type]
+          labels: %i[feature_id eligible]
         )
 
         @registry[:feature_executions] = @prometheus.counter(
@@ -120,13 +120,12 @@ module StarGates
       end
 
       # Use pre-registered metrics for better performance
-      def record_feature_evaluation(feature_id, eligible, user_context, execution_time_ms = nil)
+      def record_feature_evaluation(feature_id, eligible, _context, execution_time_ms = nil)
         return unless enabled?
 
         tags = {
           feature_id: feature_id.to_s,
-          eligible: eligible.to_s,
-          user_type: extract_user_type(user_context)
+          eligible: eligible.to_s
         }
 
         @registry[:feature_evaluations].increment(labels: tags)

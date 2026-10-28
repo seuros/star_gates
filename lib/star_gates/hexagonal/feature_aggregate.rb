@@ -73,10 +73,10 @@ module StarGates
       end
 
       # Command: Record evaluation
-      def record_evaluation(user_context, eligible, reason)
+      def record_evaluation(context, eligible, reason)
         event = Events::FeatureEvaluated.new(
           aggregate_id: @id,
-          user_context: user_context,
+          context: context,
           eligible: eligible,
           reason: reason
         )
@@ -213,7 +213,7 @@ module StarGates
       def apply_evaluation_recorded(event)
         @state[:evaluations] ||= []
         @state[:evaluations] << {
-          user_context: event.user_context,
+          context: event.context,
           eligible: event.eligible,
           reason: event.reason,
           occurred_at: event.occurred_at

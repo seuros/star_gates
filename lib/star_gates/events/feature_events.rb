@@ -58,11 +58,11 @@ module StarGates
     end
 
     class FeatureEvaluated < BaseEvent
-      def initialize(aggregate_id:, user_context:, eligible:, reason:, **opts)
+      def initialize(aggregate_id:, context:, eligible:, reason:, **opts)
         super(
           aggregate_id: aggregate_id,
           data: {
-            user_context: user_context,
+            context: context,
             eligible: eligible,
             reason: reason
           },
@@ -70,7 +70,7 @@ module StarGates
         )
       end
 
-      def user_context = data[:user_context]
+      def context = data[:context]
       def eligible = data[:eligible]
       def reason = data[:reason]
     end

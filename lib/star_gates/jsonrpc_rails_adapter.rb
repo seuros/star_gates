@@ -170,18 +170,18 @@ module StarGates
     end
 
     def evaluate_feature(params)
-      validate_required_params(params, %w[featureId userContext])
+      validate_required_params(params, %w[featureId context])
 
       feature_id = params['featureId']
-      user_context = params['userContext']
+      context = params['context']
       eligible = params['eligible'] || false
       reason = params['reason'] || 'No reason provided'
 
-      feature_service.record_feature_evaluation(feature_id, user_context, eligible, reason)
+      feature_service.record_feature_evaluation(feature_id, context, eligible, reason)
 
       {
         featureId: feature_id,
-        userContext: user_context,
+        context: context,
         eligible: eligible,
         reason: reason,
         recordedAt: Time.now.utc.iso8601

@@ -14,7 +14,7 @@ module StarGates
         demo.setup_features
         demo.demonstrate_feature_introspection
         demo.demonstrate_system_introspection
-        demo.demonstrate_user_simulation
+        demo.demonstrate_context_simulation
         demo.demonstrate_debugging
         demo.demonstrate_rollout_analysis
       end
@@ -22,7 +22,7 @@ module StarGates
       def setup_features
         puts "\n📊 Setting up demo features..."
 
-        @payment_feature = StarGates::Feature.new(rollout: 25, group: :beta_users)
+        @payment_feature = StarGates::Feature.new(rollout: 25, group: :beta)
         @dashboard_feature = StarGates::Feature.new(rollout: 75)
         @experimental_feature = StarGates::Feature.new(rollout: 5)
 
@@ -102,24 +102,21 @@ module StarGates
         end
       end
 
-      def demonstrate_user_simulation
-        puts "\n👤 User Simulation & Testing"
+      def demonstrate_context_simulation
+        puts "\n🔑 Context Simulation & Testing"
         puts '-' * 30
 
-        test_users = [
-          { id: 123, groups: [:beta_users] },
-          { id: 456, groups: [:regular] },
-          { id: 789, groups: %i[admin beta_users] }
+        contexts = [
+          { key: 'account:123', groups: [:beta] },
+          { key: 'device:456', groups: [:regular] },
+          { key: 'resident:789', groups: %i[admin beta] }
         ]
 
-        test_users.each do |user_data|
-          puts "\n🧪 Testing User ID: #{user_data[:id]} (Groups: #{user_data[:groups]})"
+        contexts.each do |context|
+          puts "\n🧪 Testing Key: #{context[:key]} (Groups: #{context[:groups]})"
 
           [@payment_feature, @dashboard_feature].each do |feature|
-            simulation = feature.simulate_for_user(
-              user_id: user_data[:id],
-              user_groups: user_data[:groups]
-            )
+            simulation = feature.simulate(**context)
 
             puts "  #{feature.feature_name}:"
             puts "    Eligible: #{simulation[:eligible]}"
@@ -133,18 +130,18 @@ module StarGates
         puts "\n🐛 Debugging & Troubleshooting"
         puts '-' * 30
 
-        test_user = StarGates::Feature::MockUser.new(id: 500, groups: [:regular])
+        context = { key: 'device:500', groups: [:regular] }
 
         [@payment_feature, @dashboard_feature, @experimental_feature].each do |feature|
           puts "\n🔧 Debugging #{feature.feature_name}:"
 
-          debug_info = feature.eligibility_debug(user: test_user)
-          puts "  User ID: #{debug_info[:user_id]}"
+          debug_info = feature.eligibility_debug(**context)
+          puts "  Key: #{debug_info[:key]}"
           puts "  Feature Status: #{debug_info[:feature_status]}"
           puts "  Eligible: #{debug_info[:eligible]}"
           puts "  Reason: #{debug_info[:reason]}"
 
-          puts "  User Hash: #{debug_info[:user_hash]} (mod 100: #{debug_info[:hash_modulo]})" if debug_info[:user_hash]
+          puts "  Key Hash: #{debug_info[:key_hash]} (mod 100: #{debug_info[:hash_modulo]})" if debug_info[:key_hash]
 
           puts "  Group Match: #{debug_info[:group_match]}" if debug_info[:group_match]
         end
@@ -159,11 +156,11 @@ module StarGates
         [@dashboard_feature, @experimental_feature].each do |feature|
           puts "\n🎯 #{feature.feature_name} Rollout Analysis:"
 
-          scenarios = feature.test_rollout_scenarios(test_percentages, sample_user_ids: (1..200).to_a)
+          scenarios = feature.test_rollout_scenarios(test_percentages, sample_keys: (1..200).to_a)
 
           scenarios.each do |percentage, data|
             puts "  #{percentage}% rollout:"
-            puts "    Estimated users: #{data[:eligible_users]}/#{data[:sample_size]}"
+            puts "    Eligible keys: #{data[:eligible_keys]}/#{data[:sample_size]}"
             puts "    Actual percentage: #{data[:estimated_percentage]}%"
           end
         end

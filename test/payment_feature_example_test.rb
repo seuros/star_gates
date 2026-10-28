@@ -5,9 +5,9 @@ require_relative 'dummy/demos/payment_feature'
 
 class PaymentFeatureExampleTest < ActiveSupport::TestCase
   def setup
-    @user = MockUser.new(id: 123, groups: [:beta_users])
     @service = StarGates::Examples::PaymentService.new(
-      user: @user,
+      key: 123,
+      groups: [:beta],
       amount: 1000,
       currency: 'USD'
     )
@@ -95,7 +95,7 @@ class PaymentFeatureExampleTest < ActiveSupport::TestCase
     result = @service.process_payment
     assert_equal 'v2', result[:api_version]
 
-    # Test ineligible user
+    # Test ineligible context
     payment_feature.define_singleton_method(:eligible_for_rollout?) { |_context| false }
 
     result = @service.process_payment

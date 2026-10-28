@@ -21,7 +21,7 @@ feature_service = StarGates.feature_service
 payment_aggregate = feature_service.create_feature(
   'payment_v2',
   rollout: 25,
-  group: :beta_users,
+  group: :beta,
   metadata: { team: 'payments', version: '2.0' }
 )
 
@@ -58,16 +58,16 @@ puts '📊 dashboard_redesign: disabled → canary'
 puts "\n📈 Recording Feature Usage..."
 feature_service.record_feature_execution(
   'payment_v2',
-  { user_id: 123, amount: 100.50, currency: 'USD' },
+  { key: 123, amount: 100.50, currency: 'USD' },
   { success: true, transaction_id: 'txn_123' },
   15.5 # execution time in ms
 )
 
 feature_service.record_feature_evaluation(
   'payment_v2',
-  { user: { id: 456, groups: [:beta_users] } },
+  { key: 456, groups: [:beta] },
   true,
-  'User is in beta group'
+  'Context is in beta group'
 )
 
 puts '✅ Recorded execution and evaluation events'

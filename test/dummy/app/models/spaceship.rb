@@ -4,8 +4,8 @@ require_relative 'base_ship'
 require_relative 'spaceflight_systems'
 
 class Spaceship < BaseShip
-  def engage_warp(destination, pilot: nil)
-    activate(:warp_drive, user: pilot) { SpaceflightSystems::WarpDrive.engage(destination) }
+  def engage_warp(destination, **context)
+    activate(:warp_drive, **context) { SpaceflightSystems::WarpDrive.engage(destination) }
   end
 
   def power_up_reactor(level = 100)

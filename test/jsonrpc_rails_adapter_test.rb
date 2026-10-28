@@ -177,7 +177,7 @@ if StarGates.respond_to?(:jsonrpc_rails_available?) && StarGates.jsonrpc_rails_a
       request = JSON_RPC::MockRequest.new(1, 'feature.create', {
                                             'featureId' => 'test_feature',
                                             'rollout' => 25,
-                                            'group' => 'beta_users'
+                                            'group' => 'beta'
                                           })
       @controller.set_mock_request(request)
 
@@ -187,7 +187,7 @@ if StarGates.respond_to?(:jsonrpc_rails_available?) && StarGates.jsonrpc_rails_a
       result = @controller.rendered_jsonrpc
       assert_equal 'test_feature', result[:featureId]
       assert_equal 25, result[:rolloutPercentage]
-      assert_equal 'beta_users', result[:groupMatcher]
+      assert_equal 'beta', result[:groupMatcher]
     end
 
     def test_feature_create_missing_params

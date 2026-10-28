@@ -61,8 +61,8 @@ class BaseShip
     gates[system] = system_gate
   end
 
-  def activate(system, user: nil, &operation)
-    gate(system).call(user: user, operation: operation)
+  def activate(system, **context, &operation)
+    gate(system).call(**context, operation: operation)
   end
 
   def log_event(message)

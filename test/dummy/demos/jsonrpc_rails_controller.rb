@@ -14,7 +14,7 @@ class StarGatesApiController < ApplicationController
   #   "params": {
   #     "featureId": "payment_v2",
   #     "rollout": 25,
-  #     "group": "beta_users"
+  #     "group": "beta"
   #   },
   #   "id": 1
   # }

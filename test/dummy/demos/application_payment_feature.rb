@@ -122,15 +122,16 @@ module StarGates
 
     # Enhanced payment service using ApplicationStarGate features
     class EnhancedPaymentService
-      def initialize(user:, amount:, currency: 'USD')
-        @user = user
+      def initialize(key:, amount:, groups: [], currency: 'USD')
+        @key = key
+        @groups = groups
         @amount = amount
         @currency = currency
-        @payment_feature = ApplicationPaymentFeature.new(rollout: 30, group: :premium_users)
+        @payment_feature = ApplicationPaymentFeature.new(rollout: 30, group: :premium)
       end
 
       def process_payment
-        context = { user: @user, amount: @amount, currency: @currency }
+        context = { key: @key, groups: @groups, amount: @amount, currency: @currency }
 
         # Use the enhanced execute method with instrumentation
         result = @payment_feature.execute(context) do
@@ -183,19 +184,17 @@ if __FILE__ == $PROGRAM_NAME
     puts '   ---'
   end
 
-  # Create test users
-  premium_user = StarGates::Feature::MockUser.new(id: 123, groups: [:premium_users])
-  regular_user = StarGates::Feature::MockUser.new(id: 456, groups: [:regular])
-
   # Create enhanced payment services
   premium_payment = StarGates::Examples::EnhancedPaymentService.new(
-    user: premium_user,
+    key: 'account:123',
+    groups: [:premium],
     amount: 250.00,
     currency: 'USD'
   )
 
   regular_payment = StarGates::Examples::EnhancedPaymentService.new(
-    user: regular_user,
+    key: 'account:456',
+    groups: [:regular],
     amount: 100.00,
     currency: 'USD'
   )
@@ -204,7 +203,7 @@ if __FILE__ == $PROGRAM_NAME
 
   # Test disabled state
   puts '=== DISABLED State ==='
-  puts "Premium user config: #{premium_payment.payment_status_with_config[:config]}"
+  puts "Premium account config: #{premium_payment.payment_status_with_config[:config]}"
   result = premium_payment.process_payment
   puts "Payment result: #{result}\n"
 
@@ -213,8 +212,8 @@ if __FILE__ == $PROGRAM_NAME
   regular_payment.instance_variable_get(:@payment_feature).rollout_canary
 
   puts '=== CANARY State ==='
-  puts "Premium user config: #{premium_payment.payment_status_with_config[:config]}"
-  puts "Regular user config: #{regular_payment.payment_status_with_config[:config]}"
+  puts "Premium account config: #{premium_payment.payment_status_with_config[:config]}"
+  puts "Regular account config: #{regular_payment.payment_status_with_config[:config]}"
 
   premium_result = premium_payment.process_payment
   regular_result = regular_payment.process_payment
@@ -226,7 +225,7 @@ if __FILE__ == $PROGRAM_NAME
   premium_payment.instance_variable_get(:@payment_feature).enable
 
   puts '=== ENABLED State ==='
-  puts "Premium user config: #{premium_payment.payment_status_with_config[:config]}"
+  puts "Premium account config: #{premium_payment.payment_status_with_config[:config]}"
   enabled_result = premium_payment.process_payment
   puts "Enabled payment: #{enabled_result}\n"
 

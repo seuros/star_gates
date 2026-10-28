@@ -8,7 +8,7 @@ class TestLLMIntrospection < Minitest::Test
     StarGates.reset!
 
     # Create a comprehensive test scenario
-    @payment_feature = StarGates::Feature.new(rollout: 25, group: :beta_users)
+    @payment_feature = StarGates::Feature.new(rollout: 25, group: :beta)
     @dashboard_feature = StarGates::Feature.new(rollout: 75)
     @experimental_feature = StarGates::Feature.new(rollout: 0)
 
@@ -142,32 +142,20 @@ class TestLLMIntrospection < Minitest::Test
     assert_equal timestamps.sort.reverse, timestamps
   end
 
-  def test_user_simulation_llm_debugging
-    # Test user scenarios for LLM troubleshooting
-    beta_user = MockUser.new(id: 123, groups: [:beta_users])
-    regular_user = MockUser.new(id: 456, groups: [:regular])
+  def test_context_simulation_llm_debugging
+    beta_simulation = @payment_feature.simulate(key: 123, groups: [:beta])
 
-    # Beta user simulation
-    beta_simulation = @payment_feature.simulate_for_user(
-      user_id: beta_user.id,
-      user_groups: beta_user.groups
-    )
-
-    assert_equal 123, beta_simulation[:user_id]
-    assert_equal [:beta_users], beta_simulation[:user_groups]
+    assert_equal 123, beta_simulation[:key]
+    assert_equal [:beta], beta_simulation[:groups]
     assert beta_simulation[:eligible]
     assert beta_simulation[:reason]
     assert beta_simulation[:ui_component]
     assert_equal 'enabled', beta_simulation[:feature_status]
 
-    # Regular user simulation
-    regular_simulation = @payment_feature.simulate_for_user(
-      user_id: regular_user.id,
-      user_groups: regular_user.groups
-    )
+    regular_simulation = @payment_feature.simulate(key: 456, groups: [:regular])
 
-    assert_equal 456, regular_simulation[:user_id]
-    assert_equal [:regular], regular_simulation[:user_groups]
+    assert_equal 456, regular_simulation[:key]
+    assert_equal [:regular], regular_simulation[:groups]
     assert regular_simulation[:eligible] # Feature is enabled for all
     assert regular_simulation[:reason]
     assert regular_simulation[:ui_component]
@@ -176,15 +164,13 @@ class TestLLMIntrospection < Minitest::Test
 
   def test_eligibility_debugging_llm_insights
     # Detailed debugging for LLM analysis
-    user = MockUser.new(id: 500, groups: [:regular])
-
-    debug_info = @payment_feature.eligibility_debug(user: user)
+    debug_info = @payment_feature.eligibility_debug(key: 500, groups: [:regular])
 
     # Should provide clear debugging narrative
-    assert_equal 500, debug_info[:user_id]
+    assert_equal 500, debug_info[:key]
     assert_equal 'enabled', debug_info[:feature_status]
     assert_equal 25, debug_info[:rollout_percentage]
-    assert_equal :beta_users, debug_info[:group_matcher]
+    assert_equal :beta, debug_info[:group_matcher]
     assert debug_info[:eligible]
     assert_equal 'Feature is fully enabled', debug_info[:reason]
   end

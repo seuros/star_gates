@@ -65,12 +65,20 @@ end
 
 gate = StarGates[:payments]
 gate.feature.rollout_canary
-gate.call(user: current_user, amount: 100)
+gate.call(key: 'account:42', amount: 100)
 ```
 
 Features start disabled. Use `rollout_canary` for percentage/group targeting,
-`enable` for full rollout, and `disable` to turn a feature off. Provide a user with
-an `id` for consistent percentage targeting.
+`enable` for full rollout, and `disable` to turn a feature off. Pass a stable
+string or integer `key:` for percentage targeting, such as an account, resident,
+or device identifier.
+
+Percentage targeting stays consistent across workers and restarts. Increasing
+the rollout percentage retains keys already included.
+
+For group targeting, pass `groups: [:beta]` to match `feature group: :beta`.
+A predicate such as `feature group: ->(context) { context[:region] == 'eu' }`
+receives the full context passed to the gate.
 
 When a circuit opens, its feature rolls back from enabled to canary, or from canary
 to disabled. Gates use their fallback when the feature is unavailable or execution
@@ -101,7 +109,7 @@ Define gates in an initializer and call them from controllers or services:
 ```ruby
 class PaymentsController < ApplicationController
   def create
-    result = StarGates[:payments].call(user: current_user, amount: params[:amount])
+    result = StarGates[:payments].call(key: "account:#{current_account.id}", amount: params[:amount])
     render json: result
   end
 end
@@ -153,15 +161,14 @@ require_relative 'test/dummy/app/models/spaceship'
 ship = Spaceship.new('SG Atlas', 'SG-1')
 warp = ship.gate(:warp_drive) # A StarGates::Gate, with a feature and a circuit.
 warp.feature.rollout_canary
-pilot = StarGates::Feature::MockUser.new(id: 1, groups: [:pilots])
-ship.engage_warp('Alpha Centauri', pilot: pilot)
+ship.engage_warp('Alpha Centauri', key: 'crew:1', groups: [:pilots])
 ```
 
 ### Application examples
 
 - [Payment feature](test/dummy/demos/payment_feature.rb): state-specific feature behavior.
 - [Transition history](test/dummy/demos/transition_demo.rb): recorded feature transitions.
-- [Introspection](test/dummy/demos/introspection_demo.rb): status, analytics, and user simulation.
+- [Introspection](test/dummy/demos/introspection_demo.rb): status, analytics, and context simulation.
 - [Application payment feature](test/dummy/demos/application_payment_feature.rb): application-level features.
 - [JSON-RPC controller](test/dummy/demos/jsonrpc_rails_controller.rb): optional JSON-RPC integration.
 

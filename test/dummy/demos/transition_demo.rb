@@ -22,12 +22,12 @@ module StarGates
         puts "\n📋 Setting up features..."
 
         # Create features with different configurations
-        @payment_feature = StarGates::Feature.new(rollout: 25, group: :beta_users)
+        @payment_feature = StarGates::Feature.new(rollout: 25, group: :beta)
         @dashboard_feature = StarGates::Feature.new(rollout: 50)
         @ai_feature = StarGates::Feature.new(rollout: 0)
 
         puts '✅ Created 3 features'
-        puts '   - Payment Feature (25% rollout, beta_users group)'
+        puts '   - Payment Feature (beta group)'
         puts '   - Dashboard Feature (50% rollout)'
         puts '   - AI Feature (0% rollout)'
       end

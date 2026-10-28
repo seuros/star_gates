@@ -35,7 +35,7 @@ class ApplicationStarGatesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     post '/application_star_gates/demo_payment_processing/execute',
-         params: { context: { user_id: 123 }, test_payload: 'test execution' }
+         params: { context: { key: 123 }, test_payload: 'test execution' }
     assert_response :success
 
     json_response = JSON.parse(response.body)

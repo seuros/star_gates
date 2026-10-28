@@ -41,11 +41,8 @@ class TestStarGates < Minitest::Test
       end
     end
 
-    user1 = MockUser.new(id: 1, groups: [])
-    user2 = MockUser.new(id: 2, groups: [])
-
-    result1 = StarGates[:feature_gate].call(user: user1)
-    result2 = StarGates[:feature_gate].call(user: user2)
+    result1 = StarGates[:feature_gate].call(key: 1)
+    result2 = StarGates[:feature_gate].call(key: 2)
 
     assert_includes ['feature enabled', 'feature disabled'], result1
     assert_includes ['feature enabled', 'feature disabled'], result2

@@ -53,11 +53,11 @@ module StarGates
         @repository.save(aggregate)
       end
 
-      def record_feature_evaluation(feature_id, user_context, eligible, reason)
+      def record_feature_evaluation(feature_id, context, eligible, reason)
         aggregate = @repository.find(feature_id)
         return unless aggregate # Silently skip if feature doesn't exist
 
-        aggregate.record_evaluation(user_context, eligible, reason)
+        aggregate.record_evaluation(context, eligible, reason)
         @repository.save(aggregate)
       end
 

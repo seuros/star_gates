@@ -9,8 +9,8 @@ class SpaceFleetTest < Minitest::Test
   def setup
     super
     @ship = Spaceship.new('SG Atlas', 'SG-1')
-    @pilot = MockUser.new(id: 1, groups: [:pilots])
-    @passenger = MockUser.new(id: 2, groups: [:passengers])
+    @pilot = { key: 'crew:1', groups: [:pilots] }
+    @passenger = { key: 'crew:2', groups: [:passengers] }
   end
 
   def test_systems_are_registered_star_gates_with_linked_features_and_circuits
@@ -30,7 +30,7 @@ class SpaceFleetTest < Minitest::Test
     calls = []
 
     SpaceflightSystems::WarpDrive.stub(:engage, ->(destination) { calls << destination }) do
-      assert_equal 'emergency_mode', @ship.engage_warp('Alpha Centauri', pilot: @pilot)[:status]
+      assert_equal 'emergency_mode', @ship.engage_warp('Alpha Centauri', **@pilot)[:status]
     end
 
     assert_empty calls
@@ -40,13 +40,13 @@ class SpaceFleetTest < Minitest::Test
   def test_canary_allows_pilots_and_keeps_passengers_on_safe_propulsion
     @ship.gate(:warp_drive).feature.rollout_canary
 
-    assert_equal 'engaged', @ship.engage_warp('Alpha Centauri', pilot: @pilot)[:status]
-    assert_equal 'emergency_mode', @ship.engage_warp('Alpha Centauri', pilot: @passenger)[:status]
+    assert_equal 'engaged', @ship.engage_warp('Alpha Centauri', **@pilot)[:status]
+    assert_equal 'emergency_mode', @ship.engage_warp('Alpha Centauri', **@passenger)[:status]
     assert_equal 'emergency_mode', @ship.engage_warp('Alpha Centauri')[:status]
   end
 
   def test_full_rollout_allows_passengers
-    assert_equal 'engaged', @ship.engage_warp('Alpha Centauri', pilot: @passenger)[:status]
+    assert_equal 'engaged', @ship.engage_warp('Alpha Centauri', **@passenger)[:status]
   end
 
   def test_failures_open_the_circuit_and_automatically_roll_back_the_feature
@@ -56,7 +56,7 @@ class SpaceFleetTest < Minitest::Test
 
     ActiveSupport::Notifications.subscribed(subscriber, 'star_gates.circuit.auto_rollback') do
       warp.circuit.threshold.times do
-        assert_equal 'emergency_mode', @ship.engage_warp(:unstable_sector, pilot: @pilot)[:status]
+        assert_equal 'emergency_mode', @ship.engage_warp(:unstable_sector, **@pilot)[:status]
       end
     end
 
@@ -64,27 +64,27 @@ class SpaceFleetTest < Minitest::Test
     assert_equal 'canary', warp.feature.status
     assert_equal 1, events.size
     assert_equal 'enabled', events.first[:feature_status]
-    assert_equal 'emergency_mode', @ship.engage_warp('Alpha Centauri', pilot: @pilot)[:status]
+    assert_equal 'emergency_mode', @ship.engage_warp('Alpha Centauri', **@pilot)[:status]
   end
 
   def test_repair_keeps_canary_targeting_until_an_operator_enables_full_rollout
     warp = @ship.gate(:warp_drive)
-    warp.circuit.threshold.times { @ship.engage_warp(:unstable_sector, pilot: @pilot) }
+    warp.circuit.threshold.times { @ship.engage_warp(:unstable_sector, **@pilot) }
 
     warp.circuit.reset!
 
     assert_equal 'canary', warp.feature.status
-    assert_equal 'engaged', @ship.engage_warp('Alpha Centauri', pilot: @pilot)[:status]
-    assert_equal 'emergency_mode', @ship.engage_warp('Alpha Centauri', pilot: @passenger)[:status]
+    assert_equal 'engaged', @ship.engage_warp('Alpha Centauri', **@pilot)[:status]
+    assert_equal 'emergency_mode', @ship.engage_warp('Alpha Centauri', **@passenger)[:status]
 
     warp.feature.enable
-    assert_equal 'engaged', @ship.engage_warp('Alpha Centauri', pilot: @passenger)[:status]
+    assert_equal 'engaged', @ship.engage_warp('Alpha Centauri', **@passenger)[:status]
   end
 
   def test_further_failures_disable_an_already_canary_system
     warp = @ship.gate(:warp_drive)
     warp.feature.rollout_canary
-    warp.circuit.threshold.times { @ship.engage_warp(:unstable_sector, pilot: @pilot) }
+    warp.circuit.threshold.times { @ship.engage_warp(:unstable_sector, **@pilot) }
 
     assert warp.open?
     assert_equal 'disabled', warp.feature.status
@@ -95,14 +95,14 @@ class SpaceFleetTest < Minitest::Test
     other = Spaceship.new('SG Atlas replica', 'SG-1')
     warp = @ship.gate(:warp_drive)
     other_warp = other.gate(:warp_drive)
-    warp.circuit.threshold.times { @ship.engage_warp(:unstable_sector, pilot: @pilot) }
+    warp.circuit.threshold.times { @ship.engage_warp(:unstable_sector, **@pilot) }
 
     refute_equal warp.name, other_warp.name
     refute_same warp.feature, other_warp.feature
     refute_same warp.circuit, other_warp.circuit
     assert other_warp.closed?
     assert_equal 'enabled', other_warp.feature.status
-    assert_equal 'engaged', other.engage_warp('Alpha Centauri', pilot: @passenger)[:status]
+    assert_equal 'engaged', other.engage_warp('Alpha Centauri', **@passenger)[:status]
   end
 
   def test_reactor_retries_a_transient_failure_through_chrono_machines

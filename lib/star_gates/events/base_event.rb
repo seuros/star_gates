@@ -13,7 +13,6 @@ module StarGates
         @event_type = self.class.name.split('::').last
         @data = data.freeze
         @metadata = metadata.merge(
-          created_by: Thread.current[:current_user_id],
           source: 'star_gates',
           correlation_id: Thread.current[:correlation_id] || SecureRandom.uuid
         ).freeze

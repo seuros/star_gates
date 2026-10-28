@@ -4,9 +4,8 @@ require 'test_helper'
 
 class TestIntrospection < Minitest::Test
   def setup
-    @feature = StarGates::Feature.new(rollout: 25, group: :beta_users)
-    @user = MockUser.new(id: 123, groups: [:beta_users])
-    @context = { user: @user }
+    @feature = StarGates::Feature.new(rollout: 25, group: :beta)
+    @context = { key: 123, groups: [:beta] }
   end
 
   def test_stats_method
@@ -24,7 +23,7 @@ class TestIntrospection < Minitest::Test
     config = @feature.configuration
 
     assert_equal 25, config[:rollout_percentage]
-    assert_equal :beta_users, config[:group_matcher]
+    assert_equal :beta, config[:group_matcher]
     assert config[:feature_config]
     assert config[:default_config]
     assert config[:state_machine_config]
@@ -33,7 +32,7 @@ class TestIntrospection < Minitest::Test
   def test_summary_method_disabled_state
     summary = @feature.summary
     assert_includes summary, 'DISABLED'
-    assert_includes summary, 'No users have access'
+    assert_includes summary, 'No keys are eligible'
   end
 
   def test_summary_method_enabled_state
@@ -62,13 +61,13 @@ class TestIntrospection < Minitest::Test
     assert hash[:introspected_at]
   end
 
-  def test_simulate_for_user
+  def test_simulate
     @feature.rollout_canary
 
-    simulation = @feature.simulate_for_user(user_id: 123, user_groups: [:beta_users])
+    simulation = @feature.simulate(**@context)
 
-    assert_equal 123, simulation[:user_id]
-    assert_equal [:beta_users], simulation[:user_groups]
+    assert_equal 123, simulation[:key]
+    assert_equal [:beta], simulation[:groups]
     assert simulation.key?(:eligible)
     assert simulation[:reason]
     assert simulation[:ui_component]
@@ -76,9 +75,9 @@ class TestIntrospection < Minitest::Test
   end
 
   def test_eligibility_debug_disabled_feature
-    debug = @feature.eligibility_debug(user: @user)
+    debug = @feature.eligibility_debug(**@context)
 
-    assert_equal 123, debug[:user_id]
+    assert_equal 123, debug[:key]
     assert_equal 'disabled', debug[:feature_status]
     assert_equal 'Feature is disabled', debug[:reason]
     refute debug[:eligible]
@@ -86,7 +85,7 @@ class TestIntrospection < Minitest::Test
 
   def test_eligibility_debug_enabled_feature
     @feature.enable
-    debug = @feature.eligibility_debug(user: @user)
+    debug = @feature.eligibility_debug(**@context)
 
     assert_equal 'enabled', debug[:feature_status]
     assert_equal 'Feature is fully enabled', debug[:reason]
@@ -95,7 +94,7 @@ class TestIntrospection < Minitest::Test
 
   def test_eligibility_debug_canary_with_group
     @feature.rollout_canary
-    debug = @feature.eligibility_debug(user: @user)
+    debug = @feature.eligibility_debug(**@context)
 
     assert_equal 'canary', debug[:feature_status]
     assert debug.key?(:group_match)
@@ -106,10 +105,10 @@ class TestIntrospection < Minitest::Test
     feature = StarGates::Feature.new(rollout: 50)
     feature.rollout_canary
 
-    debug = feature.eligibility_debug(user: @user)
+    debug = feature.eligibility_debug(**@context)
 
     assert_equal 'canary', debug[:feature_status]
-    assert debug.key?(:user_hash)
+    assert debug.key?(:key_hash)
     assert debug.key?(:hash_modulo)
     assert debug[:reason].include?('hash')
   end
@@ -126,7 +125,7 @@ class TestIntrospection < Minitest::Test
     scenarios.each do |percentage, data|
       assert_equal percentage, data[:percentage]
       assert data[:sample_size].positive?
-      assert data.key?(:eligible_users)
+      assert data.key?(:eligible_keys)
       assert data.key?(:estimated_percentage)
     end
   end
@@ -147,11 +146,11 @@ class TestIntrospection < Minitest::Test
     info = @feature.send(:group_matcher_info)
 
     assert_equal 'symbol', info[:type]
-    assert_equal :beta_users, info[:value]
+    assert_equal :beta, info[:value]
   end
 
   def test_group_matcher_info_proc
-    feature = StarGates::Feature.new(group: ->(user) { user.id.even? })
+    feature = StarGates::Feature.new(group: ->(context) { context[:key].even? })
     info = feature.send(:group_matcher_info)
 
     assert_equal 'proc', info[:type]

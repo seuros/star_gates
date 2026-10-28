@@ -89,35 +89,28 @@ class V010RefactoringTest < Minitest::Test
   end
 
   # ============================================================================
-  # RUBY 3.3+ FEATURE: Data.define instead of OpenStruct
+  # Context simulation
   # ============================================================================
 
-  def test_feature_mock_user_with_data_define
-    skip 'Data.define not available (Ruby < 3.2)' unless defined?(Data)
-
+  def test_feature_simulation_with_key
     feature = StarGates::Feature.new(rollout: 50)
     feature.rollout_canary
 
-    # simulate_for_user should use Data.define internally
-    result = feature.simulate_for_user(user_id: 123, user_groups: [:beta])
+    result = feature.simulate(key: 123, groups: [:beta])
 
     assert result.is_a?(Hash)
-    assert_equal 123, result[:user_id]
-    assert_equal [:beta], result[:user_groups]
+    assert_equal 123, result[:key]
+    assert_equal [:beta], result[:groups]
     assert_includes [true, false], result[:eligible]
   end
 
-  def test_feature_mock_user_responds_to_id_and_groups
-    skip 'Data.define not available (Ruby < 3.2)' unless defined?(Data)
-
+  def test_feature_simulation_with_groups
     feature = StarGates::Feature.new(group: :beta)
     feature.rollout_canary
 
-    # Internal MockUser should behave like a struct
-    result = feature.simulate_for_user(user_id: 456, user_groups: %i[beta admin])
+    result = feature.simulate(key: 456, groups: %i[beta admin])
 
-    # User should be eligible for beta group
-    assert result[:eligible], 'User with beta group should be eligible'
+    assert result[:eligible], 'Context with beta group should be eligible'
   end
 
   # ============================================================================
@@ -367,9 +360,7 @@ class V010RefactoringTest < Minitest::Test
 
     # Should work end-to-end
     gate.feature.rollout_canary
-    premium_user = MockUser.new(id: 1, groups: [:premium])
-
-    result = gate.call(user: premium_user)
+    result = gate.call(key: 1, groups: [:premium])
     assert_includes ['payment processed', 'payment queued'], result
   end
 end

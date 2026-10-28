@@ -7,7 +7,7 @@ class TestSystemIntrospectionSimple < Minitest::Test
     StarGates.reset!
 
     # Create gates manually without DSL
-    feature1 = StarGates::Feature.new(rollout: 25, group: :beta_users)
+    feature1 = StarGates::Feature.new(rollout: 25, group: :beta)
     feature2 = StarGates::Feature.new(rollout: 50)
     feature3 = StarGates::Feature.new(rollout: 0)
 

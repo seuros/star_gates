@@ -21,11 +21,8 @@ class TestFeature < Minitest::Test
     feature.rollout_canary
     assert feature.enabled?
 
-    user1 = MockUser.new(id: 1, groups: [])
-    user2 = MockUser.new(id: 2, groups: [])
-
-    result1 = feature.enabled_for?(user: user1)
-    result2 = feature.enabled_for?(user: user2)
+    result1 = feature.enabled_for?(key: 1)
+    result2 = feature.enabled_for?(key: 2)
 
     assert [true, false].include?(result1)
     assert [true, false].include?(result2)
@@ -41,8 +38,8 @@ class TestFeature < Minitest::Test
     # Once enabled, rollout percentage doesn't matter
     feature.enable
     assert feature.enabled?
-    assert feature.enabled_for?(user: MockUser.new(id: 1, groups: []))
-    assert feature.enabled_for?(user: MockUser.new(id: 2, groups: []))
+    assert feature.enabled_for?(key: 1)
+    assert feature.enabled_for?(key: 2)
   end
 
   def test_feature_group_targeting
@@ -55,15 +52,12 @@ class TestFeature < Minitest::Test
     feature.rollout_canary
     assert feature.enabled?
 
-    beta_user = MockUser.new(id: 1, groups: [:beta])
-    regular_user = MockUser.new(id: 2, groups: [:regular])
-
-    assert feature.enabled_for?(user: beta_user)
-    refute feature.enabled_for?(user: regular_user)
+    assert feature.enabled_for?(key: 1, groups: [:beta])
+    refute feature.enabled_for?(key: 2, groups: [:regular])
   end
 
   def test_feature_proc_group_targeting
-    feature = StarGates::Feature.new(group: ->(user) { user.id.even? })
+    feature = StarGates::Feature.new(group: ->(context) { context[:key].even? })
 
     # Feature is disabled by default
     refute feature.enabled?
@@ -72,11 +66,8 @@ class TestFeature < Minitest::Test
     feature.rollout_canary
     assert feature.enabled?
 
-    even_user = MockUser.new(id: 2, groups: [])
-    odd_user = MockUser.new(id: 1, groups: [])
-
-    assert feature.enabled_for?(user: even_user)
-    refute feature.enabled_for?(user: odd_user)
+    assert feature.enabled_for?(key: 2)
+    refute feature.enabled_for?(key: 1)
   end
 
   def test_feature_percentage_helper

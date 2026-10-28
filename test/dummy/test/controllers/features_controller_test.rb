@@ -47,7 +47,7 @@ class FeaturesControllerTest < ActionDispatch::IntegrationTest
     end
     StarGates[:activatable_feature].feature.enable
 
-    post '/features/activatable_feature/activate', params: { context: { user_id: 123 } }
+    post '/features/activatable_feature/activate', params: { context: { key: 123 } }
     assert_response :success
 
     json_response = JSON.parse(response.body)

@@ -9,7 +9,7 @@ class TestSystemIntrospection < Minitest::Test
     # Create some test gates with features
     StarGates.define do
       gate :payment_v2 do
-        feature rollout: 25, group: :beta_users
+        feature rollout: 25, group: :beta
         run { 'new payment' }
         fallback { 'old payment' }
       end

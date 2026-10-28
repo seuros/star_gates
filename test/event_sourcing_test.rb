@@ -17,13 +17,13 @@ class TestEventSourcing < Minitest::Test
   def test_create_feature_generates_events
     feature_id = 'test_feature'
 
-    aggregate = @feature_service.create_feature(feature_id, rollout: 25, group: :beta_users)
+    aggregate = @feature_service.create_feature(feature_id, rollout: 25, group: :beta)
 
     assert aggregate.created?
     assert_equal feature_id, aggregate.id
     assert_equal :disabled, aggregate.current_state
     assert_equal 25, aggregate.rollout_percentage
-    assert_equal :beta_users, aggregate.group_matcher
+    assert_equal :beta, aggregate.group_matcher
 
     # Check that events were stored
     events = @event_store.get_events(feature_id)
@@ -67,7 +67,7 @@ class TestEventSourcing < Minitest::Test
 
     @feature_service.record_feature_execution(
       feature_id,
-      { user_id: 123 },
+      { key: 123 },
       { success: true },
       15.5
     )
@@ -77,7 +77,7 @@ class TestEventSourcing < Minitest::Test
 
     assert_equal 1, executions.size
     execution = executions.first
-    assert_equal({ user_id: 123 }, execution[:context])
+    assert_equal({ key: 123 }, execution[:context])
     assert_equal({ success: true }, execution[:result])
     assert_equal 15.5, execution[:execution_time]
   end
@@ -89,9 +89,9 @@ class TestEventSourcing < Minitest::Test
 
     @feature_service.record_feature_evaluation(
       feature_id,
-      { user: { id: 123, groups: [:beta] } },
+      { key: 123, groups: [:beta] },
       true,
-      'User is in beta group'
+      'Context is in beta group'
     )
 
     aggregate = @repository.find(feature_id)
@@ -99,8 +99,9 @@ class TestEventSourcing < Minitest::Test
 
     assert_equal 1, evaluations.size
     evaluation = evaluations.first
+    assert_equal({ key: 123, groups: [:beta] }, evaluation[:context])
     assert evaluation[:eligible]
-    assert_equal 'User is in beta group', evaluation[:reason]
+    assert_equal 'Context is in beta group', evaluation[:reason]
   end
 
   def test_projection_updates_with_events
