@@ -25,7 +25,7 @@ module StarGates
       end
 
       # Caching operations
-      def cache_fetch(key, expires_in: nil, &block) # rubocop:disable Lint/UnusedMethodArgument -- Base adapter has no TTL support.
+      def cache_fetch(key, expires_in: nil, &block)
         if exists?(key)
           fetch(key)
         elsif block_given?
@@ -35,7 +35,7 @@ module StarGates
         end
       end
 
-      def cache_write(key, value, expires_in: nil) # rubocop:disable Lint/UnusedMethodArgument -- Base adapter has no TTL support.
+      def cache_write(key, value, expires_in: nil)
         store(key, value)
       end
 

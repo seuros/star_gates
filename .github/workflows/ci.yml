@@ -14,6 +14,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Dictator
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: seuros/setup-dictator@master
+        with:
+          version: '0.26.0'
+      - run: dictator lint --format github .
+
   test:
     name: Ruby 4.0
     runs-on: ubuntu-latest
@@ -31,9 +42,9 @@ jobs:
       - name: Run tests
         run: bundle exec rake test test:rails
 
-  # Security and quality checks
+  # Dependency security and freshness checks
   quality:
-    name: Code Quality & Security
+    name: Dependency Security
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -45,9 +56,6 @@ jobs:
         with:
           ruby-version: '4.0'
           bundler-cache: true
-
-      - name: Run Rubocop
-        run: bundle exec rubocop
 
       - name: Check for security vulnerabilities
         run: |

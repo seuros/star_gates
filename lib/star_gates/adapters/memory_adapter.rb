@@ -29,7 +29,7 @@ module StarGates
         @storage.key?(key)
       end
 
-      def cache_fetch(key, expires_in: nil, &block) # rubocop:disable Lint/UnusedMethodArgument -- Memory adapter has no TTL support.
+      def cache_fetch(key, expires_in: nil, &block)
         # Memory adapter doesn't support expiration, but we can implement basic caching
         if @storage.key?(key)
           @storage[key]
@@ -40,7 +40,7 @@ module StarGates
         end
       end
 
-      def cache_write(key, value, expires_in: nil) # rubocop:disable Lint/UnusedMethodArgument -- Memory adapter has no TTL support.
+      def cache_write(key, value, expires_in: nil)
         @storage[key] = value
       end
 

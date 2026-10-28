@@ -48,7 +48,7 @@ if StarGates.respond_to?(:jsonrpc_rails_available?) && StarGates.jsonrpc_rails_a
   end
 
   # Mock JSON_RPC classes (these would be provided by jsonrpc-rails)
-  module JSON_RPC # rubocop:disable Naming/ClassAndModuleCamelCase -- Matches jsonrpc-rails' public namespace.
+  module JSON_RPC
     class JsonRpcError < StandardError
       attr_reader :code, :message, :data
 

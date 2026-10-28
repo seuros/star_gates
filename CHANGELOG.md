@@ -12,7 +12,7 @@
 - Consolidate documentation and remove generated repository artifacts, keeping the space-fleet examples.
 - Move demos into the Rails dummy app and rewrite ship systems as StarGates gates.
 - Run gem and Rails integration tests separately, with explicit test discovery and Rails setup.
-- Add a project RuboCop configuration and fix lint findings.
+- Use the Dictator GitHub Action and a project decree for structural linting.
 
 ### Fixed
 

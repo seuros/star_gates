@@ -177,7 +177,7 @@ bundle exec ruby test/dummy/demos/payment_feature.rb
 bin/setup
 bundle exec rake test
 bundle exec rake test:rails
-bundle exec rubocop
+dictator lint .
 ```
 
 Gem tests and Rails integration tests run in separate processes. `bundle exec rake`
