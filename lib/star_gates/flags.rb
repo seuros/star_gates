@@ -2,15 +2,26 @@
 
 module StarGates
   # Boolean flags with environment > configuration > runtime > false precedence.
-  # Runtime state uses Feature's lifecycle and is local to this process.
+  # Runtime state uses Feature's lifecycle and is local to this process unless
+  # a shared store is configured.
   class Flags
     attr_accessor :configuration
+    attr_reader :store
 
-    def initialize(env: ENV, configuration: {})
+    def initialize(env: ENV, configuration: {}, store: nil, prefix: 'star_gates:flags')
       @env = env
       @configuration = configuration
+      @store = store
+      @prefix = prefix
       @runtime = {}
       @mutex = Mutex.new
+    end
+
+    def store=(store)
+      @mutex.synchronize do
+        @runtime.clear
+        @store = store
+      end
     end
 
     def enabled?(name)
@@ -34,19 +45,25 @@ module StarGates
     end
 
     def remove(name)
-      @mutex.synchronize { @runtime.delete(normalize(name)) }
+      normalized = normalize(name)
+      if @store
+        store_remove(normalized) if normalized
+      else
+        @mutex.synchronize { @runtime.delete(normalized) }
+      end
       nil
     end
 
     def reset!
-      @mutex.synchronize { @runtime.clear }
+      @store ? store_reset : @mutex.synchronize { @runtime.clear }
       nil
     end
 
     def all
       configured = configuration_flags
-      names = (environment_flags.keys + configured.keys + runtime_names).uniq
-      names.to_h { |name| [name, resolution(name, configured).slice(:enabled, :source)] }
+      runtime = runtime_values
+      names = (environment_flags.keys + configured.keys + runtime.keys).uniq
+      names.to_h { |name| [name, resolution(name, configured, runtime[name]).slice(:enabled, :source)] }
     end
 
     def enabled_flags
@@ -55,7 +72,7 @@ module StarGates
 
     def summary
       {
-        runtime_flags: runtime_names.map(&:to_sym),
+        runtime_flags: runtime_values.keys.map(&:to_sym),
         environment_flags: environment_flags.keys.map(&:to_sym),
         configuration_flags: configuration_flags.keys.map(&:to_sym),
         all_enabled: enabled_flags
@@ -63,14 +80,15 @@ module StarGates
     end
 
     def debug(name)
-      resolution(normalize(name), configuration_flags)
+      normalized = normalize(name)
+      resolution(normalized, configuration_flags, runtime_value(normalized))
     end
 
     def flag_status(name)
       normalized = normalize(name)
       details = debug(normalized)
-      metadata = @mutex.synchronize { @runtime[normalized]&.fetch(:metadata)&.dup || {} }
-      { name: normalized&.to_sym, enabled: details[:enabled], source: details[:source], metadata: metadata }
+      { name: normalized&.to_sym, enabled: details[:enabled], source: details[:source],
+        metadata: runtime_metadata(normalized) }
     end
 
     private
@@ -91,6 +109,8 @@ module StarGates
       raise ArgumentError, 'flag name must be a nonempty string or symbol' unless normalized
 
       enabled = boolean(value)
+      return store_update(normalized, enabled, metadata) if @store
+
       @mutex.synchronize do
         entry = @runtime[normalized] ||= { feature: Feature.new, metadata: {} }
         feature = entry.fetch(:feature)
@@ -101,8 +121,124 @@ module StarGates
       enabled
     end
 
-    def runtime_names
-      @mutex.synchronize { @runtime.keys }
+    def runtime_value(name)
+      return unless name
+      return store_values([name])[name] if @store
+
+      @mutex.synchronize { @runtime[name]&.fetch(:feature)&.enabled_for? }
+    end
+
+    def runtime_values
+      return store_values(store_names) if @store
+
+      @mutex.synchronize { @runtime.transform_values { |entry| entry.fetch(:feature).enabled_for? } }
+    end
+
+    def runtime_metadata(name)
+      return {} unless name
+
+      metadata = if @store
+                   @store.read(metadata_key(name))
+                 else
+                   @mutex.synchronize { @runtime[name]&.fetch(:metadata) }
+                 end
+      metadata.is_a?(Hash) ? metadata.dup : {}
+    end
+
+    def store_update(name, enabled, metadata)
+      index_add(name)
+      store_write(flag_key(name), enabled)
+      store_write(metadata_key(name), metadata.dup) if metadata
+      enabled
+    end
+
+    def store_remove(name)
+      store_delete([flag_key(name), metadata_key(name)])
+    end
+
+    def store_reset
+      slots = index_slot_keys
+      names = slots ? store_read(slots).values.uniq : legacy_index
+      keys = names.flat_map { |name| [flag_key(name), metadata_key(name)] }
+      store_delete(keys + (slots ? slots + [index_sequence_key] : [index_key]))
+    end
+
+    def index_add(name)
+      return unless @store.read(flag_key(name)).nil?
+      return @mutex.synchronize { legacy_index_add(name) } unless @store.respond_to?(:increment)
+
+      slot = @store.increment(index_sequence_key)
+      store_write(index_slot_key(slot), name) if slot
+    end
+
+    def store_names
+      slots = index_slot_keys
+      slots ? store_read(slots).values.uniq : legacy_index
+    end
+
+    def index_slot_keys
+      return unless @store.respond_to?(:increment)
+
+      Array.new(@store.read(index_sequence_key, raw: true).to_i) { |slot| index_slot_key(slot + 1) }
+    end
+
+    def legacy_index_add(name)
+      names = legacy_index
+      store_write(index_key, names + [name]) unless names.include?(name)
+    end
+
+    def legacy_index
+      names = @store.read(index_key)
+      names.is_a?(Array) ? names : []
+    end
+
+    def store_values(names)
+      keys = names.to_h { |name| [flag_key(name), name] }
+      store_read(keys.keys).each_with_object({}) do |(key, value), values|
+        values[keys.fetch(key)] = value if [true, false].include?(value)
+      end
+    end
+
+    def store_read(keys)
+      return {} if keys.empty?
+      return @store.read_multi(*keys) if @store.respond_to?(:read_multi)
+
+      keys.each_with_object({}) do |key, values|
+        value = @store.read(key)
+        values[key] = value unless value.nil?
+      end
+    end
+
+    def store_write(key, value)
+      return if @store.write(key, value)
+
+      raise Error, "#{@store.class} did not persist #{key}"
+    end
+
+    def store_delete(keys)
+      return @store.delete_multi(keys) if @store.respond_to?(:delete_multi)
+
+      keys.each { |key| @store.delete(key) }
+    end
+
+    def flag_key(name)
+      "#{@prefix}:flag:#{name}"
+    end
+
+    def metadata_key(name)
+      "#{@prefix}:metadata:#{name}"
+    end
+
+    def index_key
+      "#{@prefix}:names"
+    end
+
+    def index_sequence_key
+      "#{@prefix}:name_sequence"
+    end
+
+    def index_slot_key(slot)
+      "#{@prefix}:name:#{slot}"
     end
 
     def configuration_flags
@@ -124,10 +260,9 @@ module StarGates
       end
     end
 
-    def resolution(name, configured)
+    def resolution(name, configured, runtime_value)
       env_key = "FEATURE_#{name&.upcase}"
       environment_value = name && @env[env_key]
-      runtime_value = @mutex.synchronize { @runtime[name]&.fetch(:feature)&.enabled_for? }
 
       value, source = if name && !environment_value.to_s.strip.empty?
                         [boolean(environment_value), "environment:#{env_key}"]

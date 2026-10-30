@@ -46,9 +46,27 @@ StarGates.flags.configuration = -> { Rails.application.config.x.feature_flags }
 
 `StarGates::Flags.new(env: {}, configuration: {})` creates an isolated registry.
 `all`, `enabled_flags`, `summary`, and `flag_status` expose values and their sources.
-Runtime transitions reuse `StarGates::Feature`; changes and metadata are process-local,
-not persisted or synchronized across workers. `reset!` clears both runtime state and
-metadata, not environment/configuration. `StarGates.reset!` resets gates separately.
+By default, runtime transitions reuse `StarGates::Feature`, and changes and metadata are
+process-local. To share them across workers, give the registry an `ActiveSupport::Cache`
+store (Solid Cache, Redis, Memcached):
+
+```ruby
+StarGates.flags.store = Rails.cache
+# or: StarGates::Flags.new(store: Rails.cache, prefix: 'myapp:flags')
+```
+
+Store-backed flags read the store on every check, so a change in one worker is visible
+in the others right away. Each flag's value and metadata are separate keys written
+blindly; `prefix` (default `star_gates:flags`) namespaces them. A failed write raises
+`StarGates::Error`, and a value the store cannot return counts as no runtime override.
+Listing (`all`, `enabled_flags`, `summary`) and `reset!` use a shared name index. Each new
+name takes its own slot from an atomic `increment`, so workers adding flags at the same
+moment never drop each other's names. Stores without `increment` fall back to a
+read-modify-write list, where a concurrent addition can drop a name from listings until
+that flag next changes; lookups by name are unaffected either way. `reset!` and `remove`
+clear runtime state and metadata, not environment/configuration. Switching `store` drops
+process-local runtime state.
+`StarGates.reset!` resets gates separately.
 
 ## Gates and rollouts
 
