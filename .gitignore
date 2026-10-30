@@ -13,3 +13,4 @@
 /test/dummy/log/
 /test/dummy/tmp/
 .DS_Store
+/Gemfile.lock
