@@ -3,6 +3,7 @@
 require 'active_support/core_ext/integer/time'
 
 Rails.application.configure do
+  config.secret_key_base = 'star-gates-dummy-test-secret'
   config.enable_reloading = false
   config.eager_load = false
   config.consider_all_requests_local = true
