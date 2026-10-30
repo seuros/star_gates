@@ -15,11 +15,9 @@ Gem::Specification.new do |spec|
   spec.license = 'BSD-3-Clause'
   spec.required_ruby_version = '>= 4.0.0'
 
-  spec.metadata['allowed_push_host'] = 'https://rubygems.org'
-
   spec.metadata['homepage_uri'] = spec.homepage
   spec.metadata['source_code_uri'] = 'https://github.com/seuros/star_gates'
-  spec.metadata['changelog_uri'] = 'https://github.com/seuros/star_gates/blob/main/CHANGELOG.md'
+  spec.metadata['changelog_uri'] = 'https://github.com/seuros/star_gates/blob/master/CHANGELOG.md'
   spec.metadata['rubygems_mfa_required'] = 'true'
 
   # Specify which files should be added to the gem when it is released.
