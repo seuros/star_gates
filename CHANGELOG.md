@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/seuros/star_gates/compare/v0.2.0...v0.3.0) (2026-10-30)
+
+
+### Features
+
+* share runtime flags through an ActiveSupport::Cache store ([edb39ba](https://github.com/seuros/star_gates/commit/edb39ba43f03278a6e3d70770a14671ccc4eb539))
+
 ## 0.2.0 (2026-10-28)
 
 ### Changed
