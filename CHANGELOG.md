@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/seuros/star_gates/compare/v0.3.0...v0.3.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **deps:** require breaker_machines 0.22.1 ([34c4f16](https://github.com/seuros/star_gates/commit/34c4f16849e89646e38b73fb846049d1fcffb762))
+
 ## [0.3.0](https://github.com/seuros/star_gates/compare/v0.2.0...v0.3.0) (2026-10-30)
 
 
