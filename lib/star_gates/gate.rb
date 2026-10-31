@@ -2,6 +2,9 @@
 
 module StarGates
   class Gate
+    UNAVAILABLE = Object.new
+    private_constant :UNAVAILABLE
+
     attr_reader :name, :feature, :circuit, :run_block, :fallback_block
 
     def initialize(name, feature: nil, circuit: nil, run_block: nil, fallback_block: nil)
@@ -13,30 +16,15 @@ module StarGates
     end
 
     def call(context = {})
-      # Use the new state-specific execute method if feature supports it
-      if feature.respond_to?(:execute)
-        result = if circuit
-                   circuit.call { feature.execute(context) { execute_run_block(context) } }
-                 else
-                   feature.execute(context) { execute_run_block(context) }
-                 end
-
-        # If feature returns nil (disabled), execute fallback
-        return result unless result.nil?
-
-        execute_fallback(context)
-      else
-        # Fallback to old behavior for compatibility
-        return execute_fallback(context) unless feature_enabled?(context)
-
-        if circuit
-          circuit.call { execute_run_block(context) }
-        else
-          execute_run_block(context)
-        end
+      result = begin
+        execute_primary(context)
+      rescue StandardError
+        UNAVAILABLE
       end
-    rescue StarGates::UnavailableError, StandardError
-      execute_fallback(context)
+
+      return execute_fallback(context) if result.equal?(UNAVAILABLE)
+
+      result
     end
 
     def enabled_for?(context = {})
@@ -54,7 +42,7 @@ module StarGates
     def status
       {
         name: name,
-        feature_enabled: feature&.enabled? || true,
+        feature_enabled: feature.nil? || feature.enabled?,
         feature_status: feature.respond_to?(:status) ? feature.status : nil,
         circuit_open: circuit&.open? || false,
         last_failure: circuit&.last_failure_time
@@ -62,6 +50,29 @@ module StarGates
     end
 
     private
+
+    def execute_primary(context)
+      return execute_feature(context) if feature.respond_to?(:execute)
+      return UNAVAILABLE unless feature_enabled?(context)
+
+      with_circuit { execute_run_block(context) }
+    end
+
+    def execute_feature(context)
+      executed = false
+      result = with_circuit do
+        feature.execute(context) do
+          executed = true
+          execute_run_block(context)
+        end
+      end
+
+      executed ? result : UNAVAILABLE
+    end
+
+    def with_circuit(&block)
+      circuit ? circuit.call(&block) : block.call
+    end
 
     def feature_enabled?(context)
       return true unless feature

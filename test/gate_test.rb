@@ -114,6 +114,60 @@ class TestGate < Minitest::Test
     assert_equal 'Fallback for account:1', result
   end
 
+  def test_a_successful_nil_result_skips_the_fallback
+    feature = StarGates::Feature.new
+    feature.enable
+    calls = []
+    gate = StarGates::Gate.new(
+      :nil_result_gate,
+      feature: feature,
+      run_block: lambda {
+        calls << :run
+        nil
+      },
+      fallback_block: lambda {
+        calls << :fallback
+        :fallback
+      }
+    )
+
+    assert_nil gate.call
+    assert_equal [:run], calls
+  end
+
+  def test_a_nil_returning_run_without_fallback_does_not_raise
+    feature = StarGates::Feature.new
+    feature.enable
+    gate = StarGates::Gate.new(:nil_result_gate, feature: feature, run_block: -> {})
+
+    assert_nil gate.call
+  end
+
+  def test_a_failing_fallback_runs_once
+    calls = 0
+    gate = StarGates::Gate.new(
+      :failing_fallback_gate,
+      feature: StarGates::Feature.new,
+      run_block: -> { 'never runs' },
+      fallback_block: lambda {
+        calls += 1
+        raise 'fallback failed'
+      }
+    )
+
+    assert_raises(RuntimeError) { gate.call }
+    assert_equal 1, calls
+  end
+
+  def test_status_reports_a_disabled_feature_as_disabled
+    gate = StarGates::Gate.new(:disabled_gate, feature: StarGates::Feature.new)
+
+    status = gate.status
+    assert_equal false, status[:feature_enabled]
+    assert_equal 'disabled', status[:feature_status]
+    assert_equal true, StarGates::Gate.new(:featureless_gate).status[:feature_enabled]
+  end
+
   def test_gate_enabled_for_with_context
     feature = StarGates::Feature.new(rollout: 50)
     feature.rollout_canary # Enable canary mode for rollout testing
