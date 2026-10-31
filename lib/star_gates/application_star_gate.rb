@@ -126,7 +126,10 @@ module StarGates
       return {} unless performance_monitoring_enabled?
 
       {
-        average_execution_time: @execution_times&.sum&./([@execution_times.size, 1].max) || 0,
+        average_execution_time: average_execution_time,
+        median_execution_time: latency.quantile(0.5),
+        p95_execution_time: latency.quantile(0.95),
+        p99_execution_time: latency.quantile(0.99),
         total_executions: @execution_count || 0,
         error_rate: calculate_error_rate,
         last_execution: @last_execution_time
@@ -231,7 +234,6 @@ module StarGates
     end
 
     def setup_telemetry
-      @execution_times = []
       @execution_count = 0
       @error_count = 0
       @last_execution_time = nil
@@ -339,16 +341,32 @@ module StarGates
       record_execution(duration)
     end
 
-    # Measurements kept for the rolling average.
-    EXECUTION_SAMPLES = 100
+    # Cluster budget for the latency digest; error is about one part in this.
+    LATENCY_COMPRESSION = 100
 
     def record_execution(duration)
       return unless performance_monitoring_enabled?
 
-      @execution_times << duration
-      @execution_times = @execution_times.last(EXECUTION_SAMPLES) if @execution_times.size > EXECUTION_SAMPLES
+      latency.add(duration)
+      @latency_total = latency_total + duration
       @execution_count += 1
       @last_execution_time = Time.now
+    end
+
+    def average_execution_time
+      return 0 if @execution_count.nil? || @execution_count.zero?
+
+      latency_total / @execution_count
+    end
+
+    # Telemetry and performance monitoring are separate switches, so the digest
+    # is built where it is used rather than in either setup path.
+    def latency
+      @latency ||= ProbabilisticMachines::TDigest.new(compression: LATENCY_COMPRESSION)
+    end
+
+    def latency_total
+      @latency_total ||= 0.0
     end
 
     def calculate_error_rate
