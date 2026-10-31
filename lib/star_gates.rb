@@ -3,6 +3,7 @@
 require 'zeitwerk'
 require 'active_support'
 require 'active_support/core_ext/numeric/time'
+require 'deadline_machines'
 require 'breaker_machines'
 require_relative 'star_gates/errors'
 require_relative 'star_gates/dsl'
