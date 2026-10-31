@@ -96,6 +96,7 @@ class TestStarGates < Minitest::Test
         run { 'ok' }
       end
     end
+    StarGates[:status_gate].feature.enable
 
     status = StarGates.status(:status_gate)
     assert_equal :status_gate, status[:name]
