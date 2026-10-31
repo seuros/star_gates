@@ -322,13 +322,10 @@ module StarGates
     end
 
     def with_timeout(seconds, &)
-      if defined?(Timeout)
-        Timeout.timeout(seconds, &)
-      else
-        yield
-      end
+      budget = DeadlineMachines.clamp_sleep(seconds)
+      DeadlineMachines.with_deadline(budget) { Timeout.timeout(budget, &) }
     rescue Timeout::Error
-      raise StarGates::UnavailableError, "Feature #{feature_identifier} timed out after #{seconds}s"
+      raise StarGates::UnavailableError, "Feature #{feature_identifier} timed out after #{budget}s"
     end
 
     def record_successful_execution(duration)
