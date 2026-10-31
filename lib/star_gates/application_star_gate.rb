@@ -329,22 +329,25 @@ module StarGates
     end
 
     def record_successful_execution(duration)
-      return unless performance_monitoring_enabled?
-
-      @execution_times << duration
-      @execution_count += 1
-      @last_execution_time = Time.now
-
-      # Keep only last 100 measurements for memory efficiency
-      @execution_times = @execution_times.last(100) if @execution_times.size > 100
+      record_execution(duration)
     end
 
     def record_failed_execution(duration, _error)
       return unless performance_monitoring_enabled?
 
-      @execution_times << duration
-      @execution_count += 1
       @error_count += 1
+      record_execution(duration)
+    end
+
+    # Measurements kept for the rolling average.
+    EXECUTION_SAMPLES = 100
+
+    def record_execution(duration)
+      return unless performance_monitoring_enabled?
+
+      @execution_times << duration
+      @execution_times = @execution_times.last(EXECUTION_SAMPLES) if @execution_times.size > EXECUTION_SAMPLES
+      @execution_count += 1
       @last_execution_time = Time.now
     end
 
