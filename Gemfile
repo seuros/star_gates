@@ -5,6 +5,7 @@ source 'https://rubygems.org'
 # Specify your gem's dependencies in star_gates.gemspec
 
 gem 'deadline_machines', path: '../deadline_machines'
+gem 'probabilistic_machines', path: '../probabilistic_machines'
 gemspec
 
 gem 'benchmark'

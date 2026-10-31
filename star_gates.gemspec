@@ -42,6 +42,7 @@ Gem::Specification.new do |spec|
   # Ecosystem dependencies - distributed systems reliability
   spec.add_dependency 'breaker_machines', '>= 0.22.1' # Circuit breaker pattern
   spec.add_dependency 'deadline_machines', '>= 0.1'
+  spec.add_dependency 'probabilistic_machines', '>= 0.1'
   spec.add_dependency 'chrono_machines', '>= 0.3.0' # Exponential backoff retries
 
   # Optional dependencies
