@@ -5,6 +5,9 @@ module StarGates
   # Runtime state uses Feature's lifecycle and is local to this process unless
   # a shared store is configured.
   class Flags
+    FIRST_SLOT = 1
+    CLAIM_WINNER = 1
+
     attr_accessor :configuration
     attr_reader :store
 
@@ -153,38 +156,81 @@ module StarGates
     end
 
     def store_remove(name)
-      store_delete([flag_key(name), metadata_key(name)])
+      store_delete([flag_key(name), metadata_key(name)] + index_remove(name))
     end
 
     def store_reset
-      slots = index_slot_keys
-      names = slots ? store_read(slots).values.uniq : legacy_index
-      keys = names.flat_map { |name| [flag_key(name), metadata_key(name)] }
-      store_delete(keys + (slots ? slots + [index_sequence_key] : [index_key]))
+      keys = store_names.flat_map { |name| [flag_key(name), metadata_key(name)] }
+      store_delete(keys + index_keys)
     end
 
     def index_add(name)
       return unless @store.read(flag_key(name)).nil?
-      return @mutex.synchronize { legacy_index_add(name) } unless @store.respond_to?(:increment)
+      return @mutex.synchronize { legacy_index_add(name) } unless sequenced_index?
 
-      slot = @store.increment(index_sequence_key)
-      store_write(index_slot_key(slot), name) if slot
+      entries = slot_entries
+      return if entries.value?(name)
+
+      store_write(index_slot_key(claim_slot(entries)), name)
+    end
+
+    def index_remove(name)
+      unless sequenced_index?
+        @mutex.synchronize { legacy_index_remove(name) }
+        return []
+      end
+
+      slot = slot_entries.key(name)
+      return [] unless slot
+
+      [index_slot_key(slot), slot_claim_key(slot)]
     end
 
     def store_names
-      slots = index_slot_keys
-      slots ? store_read(slots).values.uniq : legacy_index
+      sequenced_index? ? slot_entries.values.uniq : legacy_index
     end
 
-    def index_slot_keys
-      return unless @store.respond_to?(:increment)
+    def index_keys
+      return [index_key] unless sequenced_index?
 
-      Array.new(@store.read(index_sequence_key, raw: true).to_i) { |slot| index_slot_key(slot + 1) }
+      slot_range.flat_map { |slot| [index_slot_key(slot), slot_claim_key(slot)] } + [index_sequence_key]
+    end
+
+    def slot_entries
+      slots = slot_range.to_h { |slot| [index_slot_key(slot), slot] }
+      store_read(slots.keys).transform_keys { |key| slots.fetch(key) }
+    end
+
+    def slot_range
+      FIRST_SLOT..@store.read(index_sequence_key, raw: true).to_i
+    end
+
+    def claim_slot(entries)
+      reclaimed_slot(entries) || appended_slot
+    end
+
+    def reclaimed_slot(entries)
+      slot_range.find { |slot| !entries.key?(slot) && @store.increment(slot_claim_key(slot)) == CLAIM_WINNER }
+    end
+
+    def appended_slot
+      slot = @store.increment(index_sequence_key)
+      @store.increment(slot_claim_key(slot))
+      slot
+    end
+
+    def sequenced_index?
+      @store.respond_to?(:increment)
     end
 
     def legacy_index_add(name)
       names = legacy_index
       store_write(index_key, names + [name]) unless names.include?(name)
+    end
+
+    def legacy_index_remove(name)
+      names = legacy_index
+      store_write(index_key, names - [name]) if names.include?(name)
     end
 
     def legacy_index
@@ -239,6 +285,10 @@ module StarGates
 
     def index_slot_key(slot)
       "#{@prefix}:name:#{slot}"
+    end
+
+    def slot_claim_key(slot)
+      "#{@prefix}:name_claim:#{slot}"
     end
 
     def configuration_flags

@@ -4,6 +4,8 @@ require 'test_helper'
 require 'active_support/cache'
 
 class FlagsStoreTest < Minitest::Test
+  CHURN_CYCLES = 10
+
   class StoreWithoutMulti
     def initialize
       @data = {}
@@ -111,6 +113,33 @@ class FlagsStoreTest < Minitest::Test
     @other.enable(:runtime)
 
     assert_equal [:runtime], @flags.summary[:runtime_flags]
+  end
+
+  def test_churn_does_not_grow_the_index
+    CHURN_CYCLES.times do
+      @flags.enable(:runtime)
+      @flags.remove(:runtime)
+    end
+
+    assert_empty @other.all
+    assert_equal 1, @store.read('star_gates:flags:name_sequence', raw: true).to_i
+    assert_equal ['star_gates:flags:name_sequence'],
+                 @store.instance_variable_get(:@data).keys.grep(/\Astar_gates:flags:/)
+
+    @flags.enable(:returning)
+    assert_equal [:returning], @other.summary[:runtime_flags]
+  end
+
+  def test_churn_does_not_grow_the_index_of_a_store_without_increment
+    store = StoreWithoutMulti.new
+    flags = StarGates::Flags.new(env: {}, configuration: {}, store: store)
+    CHURN_CYCLES.times do
+      flags.enable(:runtime)
+      flags.remove(:runtime)
+    end
+
+    assert_empty flags.all
+    assert_empty store.read('star_gates:flags:names')
   end
 
   def test_stale_index_entries_are_not_listed
