@@ -324,6 +324,7 @@ module StarGates
     end
 
     def with_timeout(seconds, &)
+      DeadlineMachines.check!
       budget = DeadlineMachines.clamp_sleep(seconds)
       DeadlineMachines.with_deadline(budget) { Timeout.timeout(budget, &) }
     rescue Timeout::Error
