@@ -107,6 +107,28 @@ class FlagsStoreTest < Minitest::Test
     assert_equal Array.new(8) { |i| :"flag_#{i}" }.sort, listed.sort
   end
 
+  def test_a_remove_landing_inside_a_write_leaves_the_flag_listed_and_resettable
+    writer = pause_in_store_write('star_gates:flags:flag:race') { @flags.enable(:race) }
+    @other.remove(:race)
+    writer.call
+
+    assert_equal [true, { 'race' => { enabled: true, source: 'runtime' } }], [@flags.enabled?(:race), @other.all]
+
+    @other.reset!
+
+    assert_equal [false, {}], [@flags.enabled?(:race), @other.all]
+    assert_empty @store.instance_variable_get(:@data).keys.grep(/\Astar_gates:flags:/)
+  end
+
+  def test_writing_a_flag_restores_a_lost_index_entry
+    @flags.enable(:runtime)
+    @store.delete('star_gates:flags:name:1')
+    @store.delete('star_gates:flags:name_claim:1')
+    @other.enable(:runtime)
+
+    assert_equal [:runtime], @flags.summary[:runtime_flags]
+  end
+
   def test_a_removed_flag_is_listed_once_after_it_returns
     @flags.enable(:runtime)
     @flags.remove(:runtime)
@@ -200,6 +222,26 @@ class FlagsStoreTest < Minitest::Test
   end
 
   private
+
+  def pause_in_store_write(key)
+    paused = Queue.new
+    release = Queue.new
+    thread = Thread.new do
+      trace = TracePoint.new(:call) do |tp|
+        next unless tp.method_id == :store_write && tp.binding.local_variable_get(:key) == key
+
+        trace.disable
+        paused << true
+        release.pop
+      end
+      trace.enable(target_thread: Thread.current) { yield }
+    end
+    paused.pop
+    lambda do
+      release << true
+      thread.join
+    end
+  end
 
   def build_flags
     StarGates::Flags.new(env: @env, configuration: -> { @configuration }, store: @store)
