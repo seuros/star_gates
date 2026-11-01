@@ -149,23 +149,31 @@ module StarGates
     end
 
     def store_update(name, enabled, metadata)
-      index_add(name)
-      store_write(flag_key(name), enabled)
-      store_write(metadata_key(name), metadata.dup) if metadata
+      keeping_indexed(name) do
+        store_write(flag_key(name), enabled)
+        store_write(metadata_key(name), metadata.dup) if metadata
+      end
       enabled
     end
 
+    def keeping_indexed(name)
+      index_add(name)
+      yield
+      index_add(name)
+    end
+
     def store_remove(name)
-      store_delete([flag_key(name), metadata_key(name)] + index_remove(name))
+      store_delete(index_remove(name))
+      store_delete([flag_key(name), metadata_key(name)])
     end
 
     def store_reset
       keys = store_names.flat_map { |name| [flag_key(name), metadata_key(name)] }
-      store_delete(keys + index_keys)
+      store_delete(index_keys)
+      store_delete(keys)
     end
 
     def index_add(name)
-      return unless @store.read(flag_key(name)).nil?
       return @mutex.synchronize { legacy_index_add(name) } unless sequenced_index?
 
       entries = slot_entries
