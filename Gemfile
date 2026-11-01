@@ -4,8 +4,13 @@ source 'https://rubygems.org'
 
 # Specify your gem's dependencies in star_gates.gemspec
 
-gem 'deadline_machines', path: '../deadline_machines'
-gem 'probabilistic_machines', path: '../probabilistic_machines'
+# Use a sibling checkout when there is one, so a change there is tested here
+# before it is published, and the published gem otherwise.
+%w[deadline_machines probabilistic_machines].each do |name|
+  sibling = File.expand_path("../#{name}", __dir__)
+  gem name, path: sibling if File.directory?(sibling)
+end
+
 gemspec
 
 gem 'benchmark'
