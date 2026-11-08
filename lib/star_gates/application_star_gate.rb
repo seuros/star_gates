@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'active_support/configurable'
+require 'active_support/ordered_options'
 require 'active_support/core_ext/class/attribute'
 require 'active_support/core_ext/hash/deep_merge'
 require 'active_support/core_ext/hash/indifferent_access'
@@ -10,8 +10,6 @@ require_relative 'configuration'
 
 module StarGates
   class ApplicationStarGate < Feature
-    include ActiveSupport::Configurable
-
     # Use ActiveSupport class attributes instead of custom implementation
     class_attribute :feature_name
     class_attribute :telemetry_tags, default: {}
@@ -67,7 +65,10 @@ module StarGates
       end
     end
 
-    # Configuration access using ActiveSupport::Configurable
+    def config
+      @config ||= self.class.config.inheritable_copy
+    end
+
     def timeout
       @merged_config[:timeout]
     end
@@ -147,8 +148,16 @@ module StarGates
       )
     end
 
-    # Class methods for configuration using ActiveSupport::Configurable
     class << self
+      # Each class reads through to its parent's options and writes only its own.
+      def config
+        @config ||= if superclass.respond_to?(:config)
+                      superclass.config.inheritable_copy
+                    else
+                      ActiveSupport::InheritableOptions.new
+                    end
+      end
+
       def configure(name = nil, **options)
         self.feature_name = name if name
 
@@ -159,7 +168,6 @@ module StarGates
         # Extract telemetry tags
         self.telemetry_tags = extract_telemetry_tags(options)
 
-        # Set configuration using ActiveSupport::Configurable
         remaining_options = options.except(*state_specific[:extracted_keys])
         remaining_options.each do |key, value|
           config.send("#{key}=", value)

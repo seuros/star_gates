@@ -139,6 +139,30 @@ class TestApplicationStarGate < Minitest::Test
     assert_equal 2, feature.retry_count
   end
 
+  def test_subclass_config_inherits_without_leaking_upward
+    child = Class.new(@test_class)
+    child.configure(timeout: 9.0, cache_ttl: 60)
+
+    assert_equal 9.0, child.new.timeout
+    assert_equal 2, child.new.retry_count
+    assert_equal 60, child.new.cache_ttl
+    assert_equal 2.0, @test_class.new.timeout
+    assert_nil @test_class.new.cache_ttl
+    assert_nil Class.new(StarGates::ApplicationStarGate).new.timeout
+  end
+
+  def test_parent_config_set_later_reaches_existing_subclasses
+    child = Class.new(@test_class)
+    child.config # materialize before the parent changes
+    @test_class.configure(circuit_breaker_threshold: 7)
+
+    assert_equal 7, child.new.circuit_breaker_threshold
+  end
+
+  def test_does_not_use_deprecated_activesupport_configurable
+    refute_includes StarGates::ApplicationStarGate.ancestors.map(&:name), 'ActiveSupport::Configurable'
+  end
+
   def teardown
     # Clean up any subscriptions
     ActiveSupport::Notifications.unsubscribe(/star_gates\./)
