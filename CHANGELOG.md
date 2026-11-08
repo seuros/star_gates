@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.2](https://github.com/seuros/star_gates/compare/v0.3.1...v0.3.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* a feature timeout can no longer outlive the caller ([d9c108f](https://github.com/seuros/star_gates/commit/d9c108f1f47fd912ffed097ef9e70fff41078f35))
+* a lone checkout can bundle ([90bb638](https://github.com/seuros/star_gates/commit/90bb638a78a33e4622c7ce459abbcd95bcf30bfc))
+* a published flag value implies index membership ([3a60b40](https://github.com/seuros/star_gates/commit/3a60b4058d8ab5ce66643f479eb369c235803af4))
+* bound the execution samples on the failure path too ([c516e97](https://github.com/seuros/star_gates/commit/c516e97542ab9d6a79c66f607c00eaa24ac3f542))
+* check the budget before clamping it to a timeout ([6c7cc37](https://github.com/seuros/star_gates/commit/6c7cc37627adb295d30247a00c621b8956dbb765))
+* measure latency with a t-digest instead of a trailing array ([f0e0beb](https://github.com/seuros/star_gates/commit/f0e0beb674a2bfd6097d1c104cd4cc927745bdc9))
+* reclaim flag index slots instead of leaking them ([46002cc](https://github.com/seuros/star_gates/commit/46002ccb21188f6b8ac957bf50aaf570ae2e9cdb))
+* replace deprecated ActiveSupport::Configurable with inheritable class config ([2a33f41](https://github.com/seuros/star_gates/commit/2a33f417f6d8d5a50e14deb2caee9b22d0fe3b1b))
+* separate gate unavailability from the primary result ([85a1d35](https://github.com/seuros/star_gates/commit/85a1d352c0bbe2ee90923916de6d152ef7b625cb))
+
 ## [0.3.1](https://github.com/seuros/star_gates/compare/v0.3.0...v0.3.1) (2026-10-30)
 
 
