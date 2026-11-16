@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/seuros/star_gates/compare/v0.3.2...v0.4.0) (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* run on the released fleet cores in Integer nanoseconds
+
+### Features
+
+* run on the released fleet cores in Integer nanoseconds ([1c51494](https://github.com/seuros/star_gates/commit/1c514944cfdfcfc58b82c2b77b54afb9a4a22473))
+
 ## [0.3.2](https://github.com/seuros/star_gates/compare/v0.3.1...v0.3.2) (2026-11-08)
 
 
