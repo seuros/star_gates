@@ -2,7 +2,7 @@
 
 class DemoPaymentFeature < StarGates::ApplicationStarGate
   configure 'demo_payment_processing',
-            timeout: 3.0,
+            timeout: 3_000_000_000,
             retry_count: 3,
             circuit_breaker_threshold: 5,
             performance_monitoring: true,

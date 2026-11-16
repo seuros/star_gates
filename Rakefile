@@ -15,4 +15,9 @@ namespace :test do
   end
 end
 
-task default: [:test, 'test:rails']
+desc 'Validate RBS signatures'
+task :rbs do
+  sh 'rbs', '-I', 'sig', 'validate'
+end
+
+task default: [:test, 'test:rails', :rbs]

@@ -117,4 +117,21 @@ class TestFeatureStateMachine < Minitest::Test
     # Eligibility depends on the supplied context.
     assert_respond_to @feature, :enabled_for?
   end
+
+  # Bug: a refused event answered a bare `false` with no reason. With
+  # state_machines >= 0.300 a refusal stays falsy and says why; a success
+  # answers the transition.
+  def test_a_refused_event_says_why
+    refute @feature.disable
+    assert_equal :no_transition, @feature.disable_refusal
+    assert_equal 'disabled', @feature.status
+
+    error = assert_raises(StateMachines::InvalidTransition) { @feature.disable! }
+    assert_equal :no_transition, error.reason
+
+    transition = @feature.rollout_canary
+    assert_instance_of StateMachines::Transition, transition
+    assert_equal %w[disabled canary], [transition.from, transition.to]
+    assert_nil @feature.rollout_canary_refusal
+  end
 end

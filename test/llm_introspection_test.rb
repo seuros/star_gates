@@ -67,13 +67,13 @@ class TestLLMIntrospection < Minitest::Test
 
     # Each transition should have LLM-friendly metadata
     transitions.each do |transition|
-      assert transition[:timestamp]
+      assert transition[:at]
       assert transition[:feature_name]
       assert transition[:feature_class]
       assert transition[:from_state]
       assert transition[:to_state]
       assert transition[:event]
-      assert transition[:duration_since]
+      assert transition[:age]
     end
   end
 
@@ -128,17 +128,15 @@ class TestLLMIntrospection < Minitest::Test
 
     # Each transition should tell a story
     transitions[:transitions].each do |transition|
-      assert transition[:timestamp]
-      assert transition[:feature_name]
-      assert transition[:feature_class]
-      assert transition[:from_state]
-      assert transition[:to_state]
+      assert_kind_of Integer, transition[:occurred_at]
+      assert transition[:feature]
+      assert transition[:from]
+      assert transition[:to]
       assert transition[:event]
-      assert transition[:duration_since]
     end
 
     # Should be in reverse chronological order for narrative flow
-    timestamps = transitions[:transitions].map { |t| t[:timestamp] }
+    timestamps = transitions[:transitions].map { |t| t[:occurred_at] }
     assert_equal timestamps.sort.reverse, timestamps
   end
 

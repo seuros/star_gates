@@ -93,13 +93,11 @@ class TestSystemIntrospectionSimple < Minitest::Test
 
     # Check the transition structure
     transition = transitions[:transitions].first
-    assert transition[:timestamp]
-    assert transition[:feature_name]
-    assert transition[:feature_class]
-    assert transition[:from_state]
-    assert transition[:to_state]
+    assert_kind_of Integer, transition[:occurred_at]
+    assert transition[:feature]
+    assert transition[:from]
+    assert transition[:to]
     assert transition[:event]
-    assert transition[:duration_since]
   end
 
   def test_feature_overview_with_no_gates

@@ -81,14 +81,13 @@ module StarGates
           puts "\n🔍 #{feature.feature_name} History:"
           puts "   Total transitions: #{feature.transition_count}"
           puts "   Current state: #{feature.status}"
-          puts "   Time in current state: #{feature.send(:state_duration)}"
+          puts "   Time in current state: #{feature.stats[:state_duration]}ns"
 
           if feature.transition_count.positive?
             puts '   Recent transitions:'
             feature.transition_history(limit: 5)[:transitions].each_with_index do |transition, i|
               puts "     #{i + 1}. #{transition[:from_state]} → #{transition[:to_state]} (#{transition[:event]})"
-              timestamp = transition[:timestamp].strftime('%H:%M:%S.%L')
-              puts "        #{timestamp} - #{transition[:duration_since].round(3)}s ago"
+              puts "        #{transition[:age]}ns ago"
             end
           else
             puts '   No transitions recorded'
@@ -115,15 +114,14 @@ module StarGates
         puts '📊 System Summary:'
         puts "   Total transitions found: #{recent_transitions[:total_found]}"
         puts "   Showing: #{recent_transitions[:transitions].size}"
-        puts "   Generated at: #{recent_transitions[:generated_at].strftime('%H:%M:%S')}"
+        puts "   Generated at: #{recent_transitions[:generated_at]}ns (monotonic)"
 
         if recent_transitions[:transitions].any?
           puts "\n🕐 Recent Transitions (newest first):"
           recent_transitions[:transitions].each_with_index do |transition, i|
-            puts "   #{i + 1}. #{transition[:feature_name]}: #{transition[:from_state]} → #{transition[:to_state]}"
+            puts "   #{i + 1}. #{transition[:feature]}: #{transition[:from]} → #{transition[:to]}"
             puts "      Event: #{transition[:event]}"
-            timestamp = transition[:timestamp].strftime('%H:%M:%S.%L')
-            puts "      When: #{timestamp} (#{transition[:duration_since].round(3)}s ago)"
+            puts "      When: #{StarGates.wall_time - transition[:occurred_at]}ns ago"
             puts ''
           end
         end

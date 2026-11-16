@@ -13,12 +13,7 @@ class SelfHealingTest < Minitest::Test
     feature = StarGates::Feature.new(rollout: 50)
     feature.enable
 
-    circuit = StarGates::Circuit.new(
-      threshold: 2,
-      within: 30,
-      feature: feature,
-      auto_rollback: true
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(2, within: seconds(30)), feature: feature, auto_rollback: true)
 
     # Initial state: enabled
     assert_equal 'enabled', feature.status
@@ -41,12 +36,7 @@ class SelfHealingTest < Minitest::Test
     feature = StarGates::Feature.new(rollout: 50)
     feature.rollout_canary
 
-    circuit = StarGates::Circuit.new(
-      threshold: 2,
-      within: 30,
-      feature: feature,
-      auto_rollback: true
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(2, within: seconds(30)), feature: feature, auto_rollback: true)
 
     # Initial state: canary
     assert_equal 'canary', feature.status
@@ -69,12 +59,7 @@ class SelfHealingTest < Minitest::Test
     feature = StarGates::Feature.new(rollout: 50)
     feature.enable
 
-    circuit = StarGates::Circuit.new(
-      threshold: 2,
-      within: 30,
-      feature: feature,
-      auto_rollback: false # Disable auto-rollback
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(2, within: seconds(30)), feature: feature, auto_rollback: false)
 
     # Initial state: enabled
     assert_equal 'enabled', feature.status
@@ -97,12 +82,7 @@ class SelfHealingTest < Minitest::Test
     feature = StarGates::Feature.new(rollout: 50)
     feature.enable
 
-    circuit = StarGates::Circuit.new(
-      threshold: 2,
-      within: 30,
-      feature: feature,
-      auto_rollback: true
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(2, within: seconds(30)), feature: feature, auto_rollback: true)
 
     events = []
     subscriber = lambda { |name, _start, _finish, _id, payload|
@@ -136,11 +116,12 @@ class SelfHealingTest < Minitest::Test
 
   def test_dsl_gates_have_self_healing_enabled
     StarGates.reset!
+    policy = breaker_policy(3, within: seconds(60))
 
     StarGates.define do
       gate :payment_api do
         feature rollout: 50.percent
-        circuit threshold: 3, within: 1.minute
+        circuit policy
 
         run { raise StandardError, 'API failure' } # Must raise to trigger circuit
         fallback { 'fallback' }
@@ -166,13 +147,8 @@ class SelfHealingTest < Minitest::Test
     feature.enable
 
     # Use shorter reset_after for test speed
-    circuit = StarGates::Circuit.new(
-      threshold: 3,
-      within: 30,
-      reset_after: 1, # 1 second reset
-      feature: feature,
-      auto_rollback: true
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(3, reset_after: seconds(1)),
+                                     feature: feature, auto_rollback: true)
 
     # Track state transitions
     states = [feature.status]
@@ -212,13 +188,8 @@ class SelfHealingTest < Minitest::Test
 
   def test_circuit_close_instrumentation
     feature = StarGates::Feature.new(rollout: 50)
-    circuit = StarGates::Circuit.new(
-      threshold: 2,
-      within: 30,
-      reset_after: 1, # 1 second reset
-      feature: feature,
-      auto_rollback: true
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(2, reset_after: seconds(1)),
+                                     feature: feature, auto_rollback: true)
 
     events = []
     subscriber = lambda { |name, _start, _finish, _id, payload|
@@ -266,11 +237,12 @@ class SelfHealingTest < Minitest::Test
     # 5. Ops manually re-enables feature back to canary when API recovers
 
     StarGates.reset!
+    policy = breaker_policy(5, within: seconds(60), reset_after: seconds(1))
 
     StarGates.define do
       gate :new_payment_api do
         feature rollout: 100 # Full rollout
-        circuit threshold: 5, within: 1.minute, reset_after: 1 # 1 second reset for test
+        circuit policy
 
         run { raise StandardError, 'new API down' } # Simulating failure
         fallback { 'legacy API' }
@@ -320,12 +292,7 @@ class SelfHealingTest < Minitest::Test
     feature = StarGates::Feature.new(rollout: 50)
     feature.enable
 
-    circuit = StarGates::Circuit.new(
-      threshold: 10,
-      within: 30,
-      feature: feature,
-      auto_rollback: true
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(10, within: seconds(30)), feature: feature, auto_rollback: true)
 
     # Concurrent failures from multiple threads
     threads = 5.times.map do
@@ -353,11 +320,7 @@ class SelfHealingTest < Minitest::Test
 
   def test_circuit_without_feature_works_normally
     # Circuit without feature should work as regular circuit breaker
-    circuit = StarGates::Circuit.new(
-      threshold: 2,
-      within: 30,
-      feature: nil # No feature attached
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(2, within: seconds(30)), feature: nil)
 
     # Trigger failures
     2.times do
@@ -377,12 +340,7 @@ class SelfHealingTest < Minitest::Test
     feature = StarGates::Feature.new(rollout: 50)
     feature.enable
 
-    circuit = StarGates::Circuit.new(
-      threshold: 2,
-      within: 30,
-      feature: feature,
-      auto_rollback: true
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(2, within: seconds(30)), feature: feature, auto_rollback: true)
 
     # Initial transition count
     initial_count = feature.transition_count

@@ -15,9 +15,9 @@ class BaseSpaceship < BaseShip
 
   def configure_gates
     super
-    define_system(:engine, threshold: 3, within: 1.minute, reset_after: 30.seconds,
+    define_system(:engine, policy(3, seconds(60), seconds(30)),
                   fallback: -> { 'Emergency power' })
-    define_system(:shields, threshold: 5, within: 2.minutes, reset_after: 45.seconds,
+    define_system(:shields, policy(5, seconds(120), seconds(45)),
                   fallback: -> { 'Emergency deflectors' })
   end
 end

@@ -33,15 +33,31 @@ class BaseShip
   protected
 
   def configure_gates
-    define_system(:life_support, threshold: 2, within: 1.minute, reset_after: 30.seconds,
+    define_system(:life_support, policy(2, seconds(60), seconds(30)),
                   fallback: method(:activate_emergency_life_support))
-    define_system(:navigation, threshold: 5, within: 2.minutes, reset_after: 45.seconds,
+    define_system(:navigation, policy(5, seconds(120), seconds(45)),
                   fallback: method(:engage_manual_navigation))
-    define_system(:communications, threshold: 3, within: 90.seconds, reset_after: 20.seconds,
+    define_system(:communications, policy(3, seconds(90), seconds(20)),
                   fallback: method(:use_emergency_beacon))
   end
 
-  def define_system(system, fallback:, rollout: 100, group: nil, **circuit_config)
+  NS_PER_SECOND = 1_000_000_000
+
+  def seconds(count) = count * NS_PER_SECOND
+
+  # Opens after `threshold` failures within `within`, cools down for
+  # `reset_after` (Integer nanoseconds), closes on the first good probe.
+  def policy(threshold, within, reset_after)
+    BreakerMachines::Policy.new(BreakerMachines::Threshold.new(threshold, nil, 0), within,
+                                BreakerMachines::Recovery.new(reset_after, 0.0, 1, 1), nil)
+  end
+
+  # Up to `max_attempts` tries, a millisecond apart.
+  def retry_policy(max_attempts)
+    StarGates::RetryPolicy.new(ChronoMachines::Constant.new(1_000_000, 0.0), max_attempts)
+  end
+
+  def define_system(system, policy, retry_policy = nil, fallback:, rollout: 100, group: nil)
     # Include object_id so two ships never share rollout or circuit state.
     gate_name = :"#{registry_number}:#{object_id}:#{system}"
     fallback_action = fallback
@@ -49,7 +65,7 @@ class BaseShip
     system_gate = StarGates.define do
       gate gate_name do
         feature rollout: rollout, group: group
-        circuit(**circuit_config)
+        circuit policy, retry_policy
         run { |context| context.fetch(:operation).call }
         fallback { fallback_action.call }
       end

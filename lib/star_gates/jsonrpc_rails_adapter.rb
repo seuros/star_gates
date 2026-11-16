@@ -2,7 +2,13 @@
 
 module StarGates
   # Optional JSON-RPC adapter using jsonrpc-rails gem
-  # Include this in your Rails controllers when jsonrpc-rails is available
+  # Include this in your Rails controllers when jsonrpc-rails is available.
+  # It defines no method ActionController::Base has, so including it never
+  # changes how Rails dispatches the controller.
+  # A refused command answers invalid_params with the refusal symbol as its
+  # error; `executionTime` is Integer nanoseconds. Wall-clock instants on the
+  # wire stay ISO 8601 strings: Integer nanoseconds since the epoch exceed
+  # what a JavaScript client reads exactly.
   module JsonrpcRailsAdapter
     def self.available?
       defined?(JSON_RPC) && defined?(ActionController::Base)
@@ -14,8 +20,11 @@ module StarGates
       raise LoadError, "jsonrpc-rails gem is required. Add 'gem \"jsonrpc-rails\"' to your Gemfile"
     end
 
-    # Main JSON-RPC request handler
-    def process
+    # The JSON-RPC action: route to it (`to: 'features#handle_jsonrpc'`). It
+    # is not named `process`, which is Rails' own dispatch entry point
+    # (`process(action, *args)`): a module method of that name would sit
+    # between the controller and ActionController::Base and replace it.
+    def handle_jsonrpc
       if jsonrpc_params_batch?
         # Handle batch requests
         responses = jsonrpc_params.filter_map { |req| handle_single_request(req) }
@@ -135,6 +144,7 @@ module StarGates
       context = params['context'] || {}
 
       aggregate = feature_service.change_feature_state(feature_id, from_state, to_state, event_name, context)
+      return refused(aggregate) if aggregate.is_a?(Symbol)
 
       {
         featureId: aggregate.id,
@@ -153,11 +163,12 @@ module StarGates
       feature_id = params['featureId']
       context = params['context'] || {}
 
-      start_time = Time.now
+      started = StarGates.monotonic_time
       result = yield if block_given? # Allow caller to provide execution block
-      execution_time = ((Time.now - start_time) * 1000).round(2) # ms
+      execution_time = StarGates.monotonic_time - started
 
-      feature_service.record_feature_execution(feature_id, context, result, execution_time)
+      recorded = feature_service.record_feature_execution(feature_id, context, result, execution_time)
+      return refused(recorded) if recorded.is_a?(Symbol)
 
       {
         featureId: feature_id,
@@ -177,7 +188,8 @@ module StarGates
       eligible = params['eligible'] || false
       reason = params['reason'] || 'No reason provided'
 
-      feature_service.record_feature_evaluation(feature_id, context, eligible, reason)
+      recorded = feature_service.record_feature_evaluation(feature_id, context, eligible, reason)
+      return refused(recorded) if recorded.is_a?(Symbol)
 
       {
         featureId: feature_id,
@@ -226,6 +238,11 @@ module StarGates
       }
     rescue StandardError => e
       JSON_RPC::JsonRpcError.build(:internal_error, data: { error: e.message })
+    end
+
+    # A refused command, its refusal symbol as the error data.
+    def refused(refusal)
+      JSON_RPC::JsonRpcError.build(:invalid_params, data: { error: refusal.to_s })
     end
 
     # Helper methods

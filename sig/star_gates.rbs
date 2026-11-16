@@ -1,0 +1,832 @@
+# StarGates: feature gates over breaker_machines, chrono_machines and
+# deadline_machines.
+#
+# Time is Integer nanoseconds throughout: monotonic for in-process instants
+# and spans, wall-clock (since the Unix epoch) for event-sourced records.
+# Sibling types are named in comments only, so these signatures validate on
+# their own; the gem reads sibling values without depending on their RBS.
+module StarGates
+  VERSION: String
+
+  type nanoseconds = Integer
+
+  # A gate's refusal: the feature is off for the context, the primary raised,
+  # the time budget ran out, or the circuit's own symbol carried whole.
+  type gate_refusal = :ineligible | :failed | :exceeded | :open | :busy | :full
+
+  type context = Hash[Symbol, untyped]
+
+  # BreakerMachines::Policy.
+  type breaker_policy = untyped
+
+  # ChronoMachines::Exponential, Constant or Fibonacci.
+  type backoff_strategy = untyped
+
+  # BreakerMachines::Circuit.
+  type breaker = untyped
+
+  def self.registry: () -> Registry
+  def self.flags: () -> Flags
+  # Evaluates the block in a DSL::DefineContext (instance_eval, which also
+  # yields the context); answers the block's value, or nil without a block.
+  def self.define: () ?{ (DSL::DefineContext) [self: DSL::DefineContext] -> untyped } -> untyped
+  # KeyError for a name with no gate.
+  def self.[]: (Symbol | String name) -> Gate
+  def self.activate: (Symbol | String name, ?context context) -> untyped
+  def self.status: (Symbol | String name) -> Hash[Symbol, untyped]
+  def self.gates: () -> Array[Symbol]
+  def self.test_mode!: () -> true
+  def self.test_mode?: () -> bool
+  def self.production_mode!: () -> false
+  def self.reset!: () -> untyped
+  def self.instrument: (String event, ?Hash[Symbol, untyped] payload) -> untyped
+  def self.monotonic_time: () -> nanoseconds
+  def self.wall_time: () -> nanoseconds
+  def self.feature_overview: () -> Hash[Symbol, untyped]
+  # `generated_at` is monotonic nanoseconds.
+  def self.rollout_statistics: () -> Hash[Symbol, untyped]
+  def self.state_distribution: () -> Hash[Symbol, untyped]
+  # One transition in either mode: `feature` the feature id (the gate name
+  # without event sourcing), `occurred_at` wall-clock nanoseconds.
+  type recent_transition = { feature: String, from: Symbol, to: Symbol, event: Symbol, occurred_at: nanoseconds }
+
+  # Newest first, one shape whether event sourcing is on or off;
+  # `generated_at` is monotonic nanoseconds. With event sourcing
+  # `total_found` counts the transitions the projection keeps, else the
+  # registered features' transitions.
+  def self.recent_transitions: (?limit: Integer) -> { transitions: Array[recent_transition], total_found: Integer,
+                                                      limit: Integer, generated_at: nanoseconds }
+  private def self.projected_transitions: (Integer limit) -> [Array[recent_transition], Integer]
+  private def self.registered_transitions: (Integer limit) -> [Array[recent_transition], Integer]
+  private def self.transition_entry: (String | Symbol feature, Symbol from, Symbol to, Symbol event,
+                                      nanoseconds occurred_at) -> recent_transition
+  def self.configure_foundation: (?event_store: EventStore::EventStore?, ?adapter: Adapters::BaseAdapter?,
+                                  ?telemetry: untyped) -> Hexagonal::FeatureService
+  def self.feature_service: () -> Hexagonal::FeatureService
+  def self.feature_service_enabled?: () -> bool
+  def self.enable_event_sourcing!: () -> Hexagonal::FeatureService?
+  def self.telemetry: () -> untyped
+  def self.configure_telemetry: (untyped adapter) -> untyped
+  def self.configuration: () -> Configuration
+  def self.configure: () ?{ (Configuration) -> void } -> void
+  def self.load_config!: (?(String | _ToPath)? file_path) -> void
+  def self.default_config_file_path: () -> (String | _ToPath)
+
+  interface _ToPath
+    def to_path: () -> String
+  end
+
+  class Error < StandardError
+  end
+
+  class UnavailableError < Error
+    attr_reader gate: untyped
+    attr_reader refusal: gate_refusal
+    def initialize: (untyped gate, gate_refusal refusal, ?String? message) -> void
+  end
+
+  # A strategy and an attempt budget counting the first try (1..255 or nil),
+  # validated by ChronoMachines::Retry: TypeError or RangeError. Sealed.
+  class RetryPolicy < Data
+    attr_reader strategy: backoff_strategy
+    attr_reader max_attempts: Integer?
+    def self.new: (backoff_strategy strategy, Integer? max_attempts) -> RetryPolicy
+                | (strategy: backoff_strategy, max_attempts: Integer?) -> RetryPolicy
+    def self.[]: (backoff_strategy strategy, Integer? max_attempts) -> RetryPolicy
+               | (strategy: backoff_strategy, max_attempts: Integer?) -> RetryPolicy
+    def self.members: () -> [:strategy, :max_attempts]
+    def initialize: (strategy: backoff_strategy, max_attempts: Integer?) -> void
+  end
+
+  # The rollout rule Feature and Hexagonal::FeatureAggregate share.
+  module Rollout
+    # TypeError unless an Integer, RangeError outside 0..100.
+    def self.validated: (untyped rollout) -> Integer
+  end
+
+  # The keywords are runtime-only; the positionals are the cores'.
+  class Circuit
+    attr_reader breaker: breaker
+    attr_reader policy: breaker_policy
+    attr_reader retry_policy: RetryPolicy?
+    attr_reader feature: untyped
+    def initialize: (breaker_policy policy, ?RetryPolicy? retry_policy, ?feature: untyped, ?auto_rollback: bool) -> void
+    def call: [T] () { () -> T } -> T
+    def open?: () -> bool
+    def closed?: () -> bool
+    def half_open?: () -> bool
+    def last_failure_at: () -> nanoseconds?
+    def failure_count: () -> Integer
+    def success_count: () -> Integer
+    def to_h: () -> { state: Symbol, failure_count: Integer, success_count: Integer, last_failure_at: nanoseconds? }
+    def reset: () -> self
+
+    private
+
+    def rollback_hooks: () -> Hash[Symbol, ^() -> untyped]
+    # ChronoMachines' on_retry hook; `next_delay` nanoseconds.
+    def instrument_retry: (exception: StandardError, attempt: Integer, next_delay: nanoseconds) -> untyped
+    def feature_status: () -> String?
+    def handle_circuit_open: () -> untyped
+    def handle_circuit_half_open: () -> untyped
+    def handle_circuit_close: () -> untyped
+  end
+
+  class Gate
+    attr_reader name: untyped
+    attr_reader feature: untyped
+    attr_reader circuit: Circuit?
+    attr_reader run_block: Proc?
+    attr_reader fallback_block: Proc?
+    def initialize: (untyped name, ?feature: untyped, ?circuit: Circuit?, ?run_block: Proc?,
+                     ?fallback_block: Proc?) -> void
+    # UnavailableError without a fallback, the primary's exception as cause.
+    def call: (?context context) -> untyped
+    def enabled_for?: (?context context) -> bool
+    def open?: () -> bool
+    def closed?: () -> bool
+    def status: () -> { name: untyped, feature_enabled: bool, feature_status: String?, circuit_open: bool,
+                        last_failure_at: nanoseconds? }
+
+    private
+
+    # [nil, result] when the primary ran, [refusal, nil] when it did not.
+    def execute_primary: (context context) -> ([nil, untyped] | [:ineligible, nil])
+    def execute_feature: (context context) -> ([nil, untyped] | [:ineligible, nil])
+    def refusal_for: (StandardError error) -> gate_refusal
+    def with_circuit: [T] () { () -> T } -> T
+    def feature_enabled?: (context context) -> bool
+    def execute_run_block: (context context) -> untyped
+    def execute_fallback: (context context, gate_refusal refusal, StandardError? error) -> untyped
+  end
+
+  # `rollout:` an Integer 0..100, `group:` nil, a Symbol or a Proc:
+  # TypeError for another type, RangeError for a rollout outside 0..100.
+  class Feature
+    TRANSITIONS_KEPT: Integer
+
+    # `at` monotonic, `occurred_at` wall-clock nanoseconds.
+    type transition = { at: nanoseconds, occurred_at: nanoseconds, age: nanoseconds, from_state: Symbol?, to_state: Symbol?,
+                        event: Symbol?, feature_name: String, feature_class: String? }
+
+    attr_reader rollout_percentage: Integer
+    attr_reader group_matcher: (Symbol | Proc)?
+    attr_reader created_at: nanoseconds
+    def initialize: (?rollout: Integer, ?group: (Symbol | Proc)?) -> void
+
+    # state_machines: the status machine and its events.
+    def status: () -> String
+    def status_name: () -> Symbol
+    def disabled?: () -> bool
+    def canary?: () -> bool
+    def enable: () -> bool
+    def disable: () -> bool
+    def rollout_canary: () -> bool
+    # State-dependent: nil when the feature does not run.
+    def execute: (?context context) ?{ () -> untyped } -> untyped
+    def ui_component: (?context context) -> String
+    def config_value: (untyped key, ?context context) -> untyped
+
+    def enabled_for?: (?context context) -> bool
+    def enabled?: () -> bool
+    def eligible_for_rollout?: (?context context) -> bool
+    def feature_config: () -> Hash[untyped, untyped]
+    def default_config: () -> Hash[untyped, untyped]
+    # `created_at` and `state_duration` are nanoseconds.
+    def stats: () -> Hash[Symbol, untyped]
+    def configuration: () -> Hash[Symbol, untyped]
+    def summary: () -> String
+    # `introspected_at` is monotonic nanoseconds.
+    def to_h: () -> Hash[Symbol, untyped]
+    def simulate: (key: String | Integer, ?groups: Array[Symbol], **untyped attributes) -> Hash[Symbol, untyped]
+    def eligibility_debug: (**untyped context) -> Hash[Symbol, untyped]
+    def test_rollout_scenarios: (Array[Integer] percentages, ?sample_keys: Array[String | Integer]) -> Hash[Integer, Hash[Symbol, untyped]]
+    # Newest first; `at`, `age` and `occurred_at` nanoseconds.
+    def transition_history: (?limit: Integer) -> { feature_name: String, total_transitions: Integer,
+                                                    transitions: Array[transition], limit: Integer }
+    def feature_name: () -> String
+    def transition_count: () -> Integer
+
+    private
+
+    def group_matcher_info: () -> ({ type: String, value: Symbol | String })?
+    def state_duration: () -> nanoseconds
+    def state_machine_config: () -> Hash[Symbol, untyped]
+    def eligibility_reason: (context context) -> String
+    def validated_group: (untyped group) -> (Symbol | Proc)?
+    def group_matches?: (context context) -> bool
+    def rollout_key: (context context) -> (String | Integer)?
+    def hash_key: (String | Integer key) -> Integer
+    # A StateMachines::Transition.
+    def record_transition: (untyped transition) -> untyped
+  end
+
+  # `timeout` is Integer nanoseconds (or nil for none of its own); an
+  # execution past it raises UnavailableError with :exceeded.
+  class ApplicationStarGate < Feature
+    def self.feature_name: () -> String?
+    def self.feature_name=: (String? name) -> String?
+    def self.feature_name?: () -> bool
+    def self.options: () -> Hash[Symbol, untyped]
+    def self.options=: (Hash[Symbol, untyped] options) -> Hash[Symbol, untyped]
+    def self.options?: () -> bool
+    def self.telemetry_tags: () -> Hash[Symbol, untyped]
+    def self.telemetry_tags=: (Hash[Symbol, untyped] tags) -> Hash[Symbol, untyped]
+    def self.telemetry_tags?: () -> bool
+    def self.state_configs: () -> Hash[Symbol, untyped]
+    def self.state_configs=: (Hash[Symbol, untyped] configs) -> Hash[Symbol, untyped]
+    def self.state_configs?: () -> bool
+    def self.configure: (?String? name, **untyped options) -> untyped
+    def self.with_timeout: (nanoseconds timeout, **untyped options) -> untyped
+    def self.with_circuit_breaker: (?threshold: Integer, **untyped options) -> untyped
+    def self.for_team: (untyped team_name, **untyped options) -> Hash[Symbol, untyped]
+    def self.critical_feature: (**untyped options) -> untyped
+    def self.experimental_feature: (**untyped options) -> untyped
+
+    # ActiveSupport class_attribute storage. The setters return the value on
+    # the owner, but the redefinition's `private` result on a subclass.
+    private def self.__class_attr_feature_name: () -> String?
+    private def self.__class_attr_feature_name=: (String? name) -> void
+    private def self.__class_attr_options: () -> Hash[Symbol, untyped]
+    private def self.__class_attr_options=: (Hash[Symbol, untyped] options) -> void
+    private def self.__class_attr_telemetry_tags: () -> Hash[Symbol, untyped]
+    private def self.__class_attr_telemetry_tags=: (Hash[Symbol, untyped] tags) -> void
+    private def self.__class_attr_state_configs: () -> Hash[Symbol, untyped]
+    private def self.__class_attr_state_configs=: (Hash[Symbol, untyped] configs) -> void
+    private def self.extract_state_configs: (Hash[Symbol, untyped] options) -> { states: Hash[Symbol, untyped],
+                                                                                  extracted_keys: Array[Symbol] }
+    private def self.extract_telemetry_tags: (Hash[Symbol, untyped] options) -> Hash[Symbol, untyped]
+
+    def initialize: (?rollout: Integer?, ?group: (Symbol | Proc)?, **untyped options) -> void
+    def feature_name: () -> String
+    def state_configs: () -> Hash[Symbol, untyped]
+    def state_configs=: (Hash[Symbol, untyped] configs) -> Hash[Symbol, untyped]
+    def state_configs?: () -> bool
+    def telemetry_tags=: (Hash[Symbol, untyped] tags) -> Hash[Symbol, untyped]
+    def telemetry_tags?: () -> bool
+    def timeout: () -> nanoseconds?
+    def retry_count: () -> Integer?
+    def circuit_breaker_threshold: () -> Integer?
+    def cache_ttl: () -> nanoseconds?
+    def performance_monitoring_enabled?: () -> bool?
+    def configuration_summary: () -> Hash[Symbol, untyped]
+    # Execution times and `last_execution` in nanoseconds, nil before any.
+    def performance_stats: () -> Hash[Symbol, untyped]
+
+    private
+
+    # Truthy when instrumentation is configured and a telemetry adapter set.
+    def telemetry_enabled?: () -> boolish
+    def error_reporting_enabled?: () -> boolish
+    def setup_counters: () -> nil
+    def instrument_execution: [T] (context context) { () -> T } -> T
+    def timed_execution: [T] (Hash[Symbol, untyped] payload, context context) { () -> T } -> T
+    def instrument_ui_access: (context context) { () -> String } -> String
+    def instrument_config_access: (untyped key, context context) { () -> untyped } -> untyped
+    # UnavailableError with :exceeded once `timeout` (or the ambient deadline)
+    # runs out. Under a budget the block runs inside Timeout.timeout, which
+    # yields the budget in seconds.
+    def with_timeout: [T] (nanoseconds? timeout) { (?Rational seconds) -> T } -> T
+    def timed_out: (nanoseconds budget) -> UnavailableError
+    # The new last-execution instant, nil without performance monitoring.
+    def record_successful_execution: (nanoseconds duration) -> nanoseconds?
+    def record_failed_execution: (nanoseconds duration) -> nanoseconds?
+    def record_execution: (nanoseconds duration) -> nanoseconds?
+    def average_execution_time: () -> nanoseconds?
+    def latency_quantile: (Float quantile) -> nanoseconds?
+    # ProbabilisticMachines::TDigest.
+    def latency: () -> untyped
+    def latency_total: () -> nanoseconds
+    # A percentage: 0 before any execution.
+    def calculate_error_rate: () -> (Float | Integer)
+    def telemetry_tags: () -> Hash[Symbol, untyped]
+  end
+
+  # Process-wide defaults; `default_timeout` and `cache_ttl` nanoseconds.
+  class Configuration
+    attr_accessor instrumentation: bool
+    attr_accessor telemetry_adapter: Symbol
+    attr_accessor default_timeout: nanoseconds
+    attr_accessor default_retry_count: Integer
+    attr_accessor circuit_breaker_threshold: Integer
+    attr_accessor cache_ttl: nanoseconds
+    attr_accessor environment: Symbol
+    # Keys are Symbols, whether set in Ruby or loaded from YAML.
+    attr_accessor feature_defaults: Hash[Symbol, Hash[Symbol, untyped]]
+    attr_accessor enable_performance_monitoring: bool
+    attr_accessor log_level: Symbol
+    attr_accessor error_reporting: bool
+    def initialize: () -> void
+    def development?: () -> bool
+    def test?: () -> bool
+    def production?: () -> bool
+    def staging?: () -> bool
+    def feature_config_for: (String | Symbol feature_name) -> Hash[Symbol, untyped]
+    # TypeError for a key that is neither a String nor a Symbol.
+    def configure_feature: (String | Symbol feature_name, ?Hash[Symbol | String, untyped] config)
+                         -> Hash[Symbol, untyped]
+    def load_from_file: (String | _ToPath file_path) -> void
+    def apply_environment_defaults!: () -> untyped
+    def to_h: () -> Hash[Symbol, untyped]
+
+    private
+
+    def config_key: (String | Symbol key) -> Symbol
+    def detect_environment: () -> Symbol
+    def detect_default_telemetry_adapter: () -> Symbol
+  end
+
+  class Registry
+    def initialize: () -> void
+    def register: (Symbol | String name, Gate gate) -> Gate
+    def []: (Symbol | String name) -> Gate?
+    # KeyError for an unknown name unless a default or block is given.
+    def fetch: (Symbol | String name) -> Gate
+             | [D] (Symbol | String name, D default) -> (Gate | D)
+             | [D] (Symbol | String name) { (Symbol) -> D } -> (Gate | D)
+    def include?: (Symbol | String name) -> bool
+    def keys: () -> Array[Symbol]
+    def values: () -> Array[Gate]
+    def each: () { ([Symbol, Gate]) -> void } -> untyped
+    def clear: () -> untyped
+    def size: () -> Integer
+    def empty?: () -> bool
+    def to_h: () -> Hash[Symbol, Gate]
+  end
+
+  module DSL
+    class GateBuilder
+      attr_reader name: untyped
+      attr_reader feature_config: Hash[Symbol, untyped]
+      # [policy, retry_policy] once `circuit` is declared.
+      attr_reader circuit_config: [breaker_policy, RetryPolicy?]?
+      attr_reader run_block: Proc?
+      attr_reader fallback_block: Proc?
+      def initialize: (untyped name) -> void
+      def feature: (?rollout: Integer, ?group: (Symbol | Proc)?) -> Hash[Symbol, untyped]
+      def circuit: (breaker_policy policy, ?RetryPolicy? retry_policy) -> [breaker_policy, RetryPolicy?]
+      def run: () { (?context) -> untyped } -> Proc
+      def fallback: () { (?context) -> untyped } -> Proc
+      def build: () -> Gate
+
+      private
+
+      def build_feature: () -> Feature
+      def build_circuit: (Feature? feature) -> Circuit
+    end
+
+    class DefineContext
+      def initialize: (Registry registry) -> void
+      def gate: (untyped name) ?{ (GateBuilder) [self: GateBuilder] -> untyped } -> Gate
+    end
+  end
+
+  # Boolean flags: environment > configuration > runtime > false. A name is a
+  # String or Symbol of letters, digits, `_` or `-`: TypeError for another
+  # type, RangeError for another String.
+  class Flags
+    FIRST_SLOT: Integer
+    CLAIM_WINNER: Integer
+
+    type flag_name = String | Symbol
+    type configuration = Hash[untyped, untyped] | ^() -> Hash[untyped, untyped]
+
+    # ENV or a Hash of String to String.
+    interface _Env
+      def []: (String key) -> String?
+      def each_pair: () { (String, String) -> void } -> untyped
+                   | () -> Enumerator[[String, String], untyped]
+    end
+
+    # Any store answering read/write/delete (Rails.cache). A store that also
+    # answers `increment` (and so `read(key, raw: true)`) gets an atomic name
+    # index; `read_multi` and `delete_multi` are used when present.
+    interface _Store
+      def read: (String key) -> untyped
+      def write: (String key, untyped value) -> untyped
+      def delete: (String key) -> untyped
+    end
+
+    attr_accessor configuration: configuration
+    attr_reader store: _Store?
+    def initialize: (?env: _Env, ?configuration: configuration, ?store: _Store?,
+                     ?prefix: String) -> void
+    def store=: (_Store? store) -> _Store?
+    def enabled?: (flag_name name) -> bool
+    def set: (flag_name name, untyped value) -> bool
+    def enable: (flag_name name, ?metadata: Hash[untyped, untyped]) -> bool
+    def disable: (flag_name name) -> bool
+    def enable_if: (flag_name name) { () -> untyped } -> bool
+    def remove: (flag_name name) -> nil
+    def reset!: () -> nil
+    def all: () -> Hash[String, { enabled: bool, source: String }]
+    def enabled_flags: () -> Array[Symbol]
+    def summary: () -> Hash[Symbol, Array[Symbol]]
+    def debug: (flag_name name) -> Hash[Symbol, untyped]
+    def flag_status: (flag_name name) -> { name: Symbol, enabled: bool, source: String, metadata: Hash[untyped, untyped] }
+
+    private
+
+    # The folded name, or nil for anything that is not a valid name.
+    def normalize: (untyped name) -> String?
+    def flag_name: (untyped name) -> String
+    def boolean: (untyped value) -> bool
+    def update: (flag_name name, untyped value, ?metadata: Hash[untyped, untyped]?) -> bool
+    def runtime_value: (String? name) -> bool?
+    def runtime_values: () -> Hash[String, bool]
+    def runtime_metadata: (String? name) -> Hash[untyped, untyped]
+    def store_update: (String name, bool enabled, Hash[untyped, untyped]? metadata) -> bool
+    def keeping_indexed: (String name) { () -> void } -> nil
+    def store_remove: (String name) -> untyped
+    def store_reset: () -> untyped
+    def index_add: (String name) -> nil
+    def index_remove: (String name) -> Array[String]
+    def store_names: () -> Array[String]
+    def index_keys: () -> Array[String]
+    def slot_entries: () -> Hash[Integer, String]
+    def slot_range: () -> Range[Integer]
+    def claim_slot: (Hash[Integer, String] entries) -> Integer
+    def reclaimed_slot: (Hash[Integer, String] entries) -> Integer?
+    def appended_slot: () -> Integer
+    # Error when the store's increment answers no Integer (NullStore: nil).
+    def store_increment: (String key) -> Integer
+    def sequenced_index?: () -> bool
+    def legacy_index_add: (String name) -> nil
+    def legacy_index_remove: (String name) -> nil
+    def legacy_index: () -> Array[String]
+    def store_values: (Array[String] names) -> Hash[String, bool]
+    def store_read: (Array[String] keys) -> Hash[String, untyped]
+    # Error when the store does not persist the value.
+    def store_write: (String key, untyped value) -> nil
+    def store_delete: (Array[String] keys) -> untyped
+    def flag_key: (String name) -> String
+    def metadata_key: (String name) -> String
+    def index_key: () -> String
+    def index_sequence_key: () -> String
+    def index_slot_key: (Integer? slot) -> String
+    def slot_claim_key: (Integer? slot) -> String
+    def configuration_flags: () -> Hash[String, bool]
+    def environment_flags: () -> Hash[String, String]
+    def resolution: (String? name, Hash[String, bool] configured, bool? runtime_value)
+                  -> { flag: Symbol?, enabled: bool, value: bool, source: String, environment_value: String?,
+                       configuration_value: bool?, runtime_value: bool? }
+  end
+
+  module Adapters
+    # `expires_in:` is Integer nanoseconds.
+    class BaseAdapter
+      def initialize: (?Hash[Symbol, untyped] config) -> void
+      def store: (untyped key, untyped value) -> untyped
+      def fetch: (untyped key) -> untyped
+      def delete: (untyped key) -> untyped
+      def exists?: (untyped key) -> bool
+      def cache_fetch: (untyped key, ?expires_in: nanoseconds?) ?{ () -> untyped } -> untyped
+      def cache_write: (untyped key, untyped value, ?expires_in: nanoseconds?) -> untyped
+      def cache_delete: (untyped key) -> untyped
+      def publish: (untyped topic, untyped message) -> untyped
+      def subscribe: (untyped topic) { (untyped) -> void } -> untyped
+      def healthy?: () -> bool
+
+      attr_reader config: Hash[Symbol, untyped]
+    end
+
+    class MemoryAdapter < BaseAdapter
+      def clear!: () -> untyped
+      def size: () -> Integer
+      def topics_count: () -> Integer
+      def subscribers_count: (untyped topic) -> Integer
+    end
+
+    # `default_ttl` and `expires_in:` nanoseconds, rounded up to milliseconds.
+    class RedisAdapter < BaseAdapter
+      private
+
+      def write_expiring: (String key, untyped value, nanoseconds? expires_in) -> untyped
+      def prefixed_key: (untyped key) -> String
+      def topic_key: (untyped topic) -> String
+      def serialize: (untyped value) -> String
+      # The parsed JSON, or the String itself when it is not JSON.
+      def deserialize: (String value) -> untyped
+      # A Redis client.
+      def redis_from_config: () -> untyped
+    end
+  end
+
+  module Events
+    # `occurred_at` is wall-clock nanoseconds since the Unix epoch.
+    class BaseEvent
+      attr_reader event_id: String
+      attr_reader aggregate_id: untyped
+      attr_reader event_type: String
+      attr_reader data: Hash[Symbol, untyped]
+      attr_reader metadata: Hash[Symbol, untyped]
+      attr_reader occurred_at: nanoseconds
+      attr_reader version: Integer
+      def initialize: (aggregate_id: untyped, ?data: Hash[Symbol, untyped], ?metadata: Hash[Symbol, untyped],
+                       ?version: Integer) -> void
+      def to_h: () -> Hash[Symbol, untyped]
+      def ==: (untyped other) -> bool
+      def hash: () -> Integer
+    end
+
+    class FeatureCreated < BaseEvent
+    end
+
+    class FeatureStateChanged < BaseEvent
+      def initialize: (aggregate_id: untyped, from_state: Symbol, to_state: Symbol, event_name: Symbol,
+                       ?context: Hash[untyped, untyped], **untyped opts) -> void
+      def from_state: () -> Symbol
+      def to_state: () -> Symbol
+      def event_name: () -> Symbol
+      def context: () -> Hash[untyped, untyped]
+    end
+
+    class FeatureConfigurationChanged < BaseEvent
+      def initialize: (aggregate_id: untyped, configuration_changes: Hash[untyped, untyped], **untyped opts) -> void
+      def configuration_changes: () -> Hash[untyped, untyped]
+    end
+
+    # `execution_time` is nanoseconds.
+    class FeatureExecuted < BaseEvent
+      def initialize: (aggregate_id: untyped, context: untyped, result: untyped, execution_time: nanoseconds,
+                       **untyped opts) -> void
+      def context: () -> untyped
+      def result: () -> untyped
+      def execution_time: () -> nanoseconds
+    end
+
+    class FeatureEvaluated < BaseEvent
+      def initialize: (aggregate_id: untyped, context: untyped, eligible: bool, reason: String, **untyped opts) -> void
+      def context: () -> untyped
+      def eligible: () -> bool
+      def reason: () -> String
+    end
+
+    class GateRegistered < BaseEvent
+      def initialize: (aggregate_id: untyped, gate_name: untyped, feature_class: untyped, **untyped opts) -> void
+      def gate_name: () -> untyped
+      def feature_class: () -> untyped
+    end
+
+    class SystemReset < BaseEvent
+    end
+  end
+
+  module EventStore
+    type append_refusal = :version_conflict
+
+    class EventStore
+      def initialize: (?adapter: MemoryAdapter?) -> void
+      # How many were stored, or :version_conflict with nothing stored.
+      def append: (untyped aggregate_id, Events::BaseEvent | Array[Events::BaseEvent] events,
+                   ?expected_version: Integer?) -> (Integer | append_refusal)
+      def get_events: (untyped aggregate_id, ?from_version: Integer) -> Array[Events::BaseEvent]
+      # At or after `timestamp`, wall-clock nanoseconds; newest first.
+      def get_events_from: (nanoseconds timestamp, ?limit: Integer) -> Array[Events::BaseEvent]
+      def get_events_by_type: (String event_type, ?limit: Integer) -> Array[Events::BaseEvent]
+      def subscribe: (?String? event_type) { (Events::BaseEvent) -> void } -> untyped
+      def get_version: (untyped aggregate_id) -> Integer
+      def replay_all: () { (Events::BaseEvent) -> void } -> untyped
+
+      private
+
+      def notify_subscribers: (Events::BaseEvent event) -> untyped
+    end
+
+    class MemoryAdapter
+      def initialize: () -> void
+      # False, storing nothing, when `expected_version` is not current.
+      def append: (untyped aggregate_id, Array[Events::BaseEvent] events, ?Integer? expected_version) -> bool
+      def get_events: (untyped aggregate_id, ?from_version: Integer) -> Array[Events::BaseEvent]
+      def get_events_from: (nanoseconds timestamp, ?limit: Integer) -> Array[Events::BaseEvent]
+      def get_events_by_type: (String event_type, ?limit: Integer) -> Array[Events::BaseEvent]
+      def get_version: (untyped aggregate_id) -> Integer
+      def replay_all: () { (Events::BaseEvent) -> void } -> untyped
+      def clear!: () -> untyped
+      def size: () -> Integer
+      def aggregate_count: () -> Integer
+    end
+  end
+
+  module Hexagonal
+    # Commands answer their event, or a refusal symbol and change nothing.
+    class FeatureAggregate
+      type refusal = :already_created | :invalid_transition | :stale_state
+
+      TRANSITIONS: Hash[Symbol, Hash[Symbol, Symbol]]
+      TRANSITIONS_KEPT: Integer
+      RECORDS_KEPT: Integer
+
+      attr_reader id: untyped
+      attr_reader version: Integer
+      attr_reader uncommitted_events: Array[Events::BaseEvent]
+      def self.from_snapshot: (Hash[Symbol, untyped] snapshot, ?Array[Events::BaseEvent] events_since_snapshot) -> FeatureAggregate
+      def initialize: (untyped id, ?Array[Events::BaseEvent] events) -> void
+      def create: (?rollout: Integer, ?group: untyped, ?metadata: Hash[untyped, untyped]) -> (Events::FeatureCreated | :already_created)
+      # TypeError unless the states and the event name are Symbols.
+      def change_state: (Symbol from_state, Symbol to_state, Symbol event_name,
+                         ?Hash[untyped, untyped] context) -> (Events::FeatureStateChanged | :invalid_transition | :stale_state)
+      def update_configuration: (Hash[untyped, untyped] changes) -> Events::FeatureConfigurationChanged
+      # `execution_time` nanoseconds.
+      def record_execution: (untyped context, untyped result, nanoseconds execution_time) -> Events::FeatureExecuted
+      def record_evaluation: (untyped context, bool eligible, String reason) -> Events::FeatureEvaluated
+      def created?: () -> bool
+      def current_state: () -> Symbol
+      def rollout_percentage: () -> Integer
+      def group_matcher: () -> untyped
+      def configuration: () -> Hash[untyped, untyped]
+      def transition_history: () -> Array[Hash[Symbol, untyped]]
+      def execution_history: () -> Array[Hash[Symbol, untyped]]
+      def evaluation_history: () -> Array[Hash[Symbol, untyped]]
+      def mark_events_as_committed: () -> Array[Events::BaseEvent]
+      def to_snapshot: () -> { id: untyped, version: Integer, state: Hash[Symbol, untyped] }
+
+      private
+
+      def restore: (Hash[Symbol, untyped] snapshot, Array[Events::BaseEvent] events) -> untyped
+      def apply_event: [E < Events::BaseEvent] (E event, ?from_history: bool) -> E
+      def apply_feature_created: (Events::FeatureCreated event) -> Hash[untyped, untyped]
+      def apply_state_changed: (Events::FeatureStateChanged event) -> Array[Hash[Symbol, untyped]]
+      def apply_configuration_changed: (Events::FeatureConfigurationChanged event) -> Hash[untyped, untyped]
+      def apply_execution_recorded: (Events::FeatureExecuted event) -> Array[Hash[Symbol, untyped]]
+      def apply_evaluation_recorded: (Events::FeatureEvaluated event) -> Array[Hash[Symbol, untyped]]
+      # A new list holding the last `kept` records.
+      def append: (Symbol key, Integer kept, Hash[Symbol, untyped] record) -> Array[Hash[Symbol, untyped]]
+      def symbol!: (Symbol name, untyped value) -> nil
+      end
+
+    class FeatureRepository
+      def initialize: (EventStore::EventStore event_store) -> void
+      def find: (untyped feature_id) -> FeatureAggregate?
+      # How many events were stored, or :version_conflict.
+      def save: (FeatureAggregate aggregate, ?expected_version: Integer?) -> (Integer | EventStore::append_refusal)
+      def find_or_create: (untyped feature_id) -> FeatureAggregate
+      def exists?: (untyped feature_id) -> bool
+      def healthy?: () -> bool
+    end
+
+    class FeatureService
+      type refusal = :not_found | :invalid_transition | :stale_state | :version_conflict
+
+      def initialize: (repository: FeatureRepository, projection: Projections::FeatureProjection,
+                       event_store: EventStore::EventStore) -> void
+      def create_feature: (untyped feature_id, ?rollout: Integer, ?group: untyped, ?metadata: Hash[untyped, untyped]) -> FeatureAggregate
+      def change_feature_state: (untyped feature_id, Symbol from_state, Symbol to_state,
+                                 Symbol event_name, ?Hash[untyped, untyped] context) -> (FeatureAggregate | refusal)
+      def update_feature_configuration: (untyped feature_id, Hash[untyped, untyped] changes) -> (FeatureAggregate | refusal)
+      def record_feature_execution: (untyped feature_id, untyped context, untyped result,
+                                     nanoseconds execution_time) -> (FeatureAggregate | refusal)
+      def record_feature_evaluation: (untyped feature_id, untyped context, bool eligible, String reason) -> (FeatureAggregate | refusal)
+      def find_feature: (untyped feature_id) -> Hash[Symbol, untyped]?
+      def find_features_by_state: (Symbol state) -> Array[Hash[Symbol, untyped]]
+      def all_features: () -> Array[Hash[Symbol, untyped]]
+      def feature_stats: () -> Hash[Symbol, untyped]
+      def recent_transitions: (?limit: Integer) -> Array[Hash[Symbol, untyped]]
+      def transition_count: () -> Integer
+      def feature_exists?: (untyped feature_id) -> bool
+      def get_feature_aggregate: (untyped feature_id) -> FeatureAggregate?
+      def rebuild_projections!: () -> untyped
+      def healthy?: () -> bool
+
+      private
+
+      def command: (untyped feature_id) { (FeatureAggregate) -> (Events::BaseEvent | Symbol) } -> (FeatureAggregate | refusal)
+      def setup_event_subscriptions: () -> untyped
+    end
+  end
+
+  module Projections
+    # Instants are the events' wall-clock nanoseconds. Records read back with
+    # Symbol keys and Symbol state and event names, whatever the adapter.
+    class FeatureProjection
+      NAMED_FIELDS: Array[Symbol]
+      def initialize: (Adapters::BaseAdapter adapter) -> void
+      def handle_event: (Events::BaseEvent event) -> untyped
+      def find_feature: (untyped feature_id) -> Hash[Symbol, untyped]?
+      def find_features_by_state: (Symbol state) -> Array[Hash[Symbol, untyped]]
+      def all_features: () -> Array[Hash[Symbol, untyped]]
+      def feature_stats: () -> Hash[Symbol, untyped]
+      def recent_transitions: (?limit: Integer) -> Array[Hash[Symbol, untyped]]
+      # How many transitions are kept (the newest 100).
+      def transition_count: () -> Integer
+      def feature_exists?: (untyped feature_id) -> bool
+      def clear!: () -> untyped
+
+      private
+
+      def handle_feature_created: (Events::FeatureCreated event) -> untyped
+      def handle_state_changed: (Events::FeatureStateChanged event) -> untyped
+      def handle_configuration_changed: (Events::FeatureConfigurationChanged event) -> untyped
+      def handle_execution_recorded: (Events::FeatureExecuted event) -> untyped
+      def handle_evaluation_recorded: (Events::FeatureEvaluated event) -> untyped
+      def update_all_features_index: (untyped feature_id, :add | :remove operation) -> untyped
+      def update_state_index: (untyped feature_id, Symbol state, :add | :remove operation) -> untyped
+      def update_recent_transitions: (Events::FeatureStateChanged event) -> untyped
+      def features_by_state_count: () -> Hash[Symbol, Integer]
+      def recent_transitions_count: () -> Integer
+      def stored_transitions: () -> Array[Hash[Symbol, untyped]]
+      def normalized: (Hash[String | Symbol, untyped]? record) -> Hash[Symbol, untyped]?
+      def total_executions_count: () -> Integer
+    end
+  end
+
+  module Telemetry
+    # Durations handed in are nanoseconds; timestamps wall-clock nanoseconds.
+    class TelemetryAdapter
+      def initialize: (?Hash[Symbol, untyped] config) -> void
+      def record_metric: (String name, Numeric value, ?tags: Hash[Symbol, untyped], ?timestamp: nanoseconds) -> untyped
+      def record_counter: (String name, ?Numeric value, ?tags: Hash[Symbol, untyped]) -> untyped
+      def record_gauge: (String name, Numeric value, ?tags: Hash[Symbol, untyped]) -> untyped
+      def record_histogram: (String name, Numeric value, ?tags: Hash[Symbol, untyped]) -> untyped
+      def record_timing: (String name, nanoseconds duration, ?tags: Hash[Symbol, untyped]) -> untyped
+      def record_feature_evaluation: (untyped feature_id, bool eligible, untyped context, ?nanoseconds? execution_time) -> untyped
+      def record_feature_execution: (untyped feature_id, untyped state, bool success, nanoseconds execution_time,
+                                     ?untyped context) -> untyped
+      def record_state_transition: (untyped feature_id, untyped from_state, untyped to_state, untyped event_name) -> untyped
+      def record_circuit_breaker_event: (untyped feature_id, untyped event_type, untyped state) -> untyped
+      def record_system_health: (bool healthy, ?Hash[untyped, bool] component_healths) -> untyped
+      def record_event_store_metrics: (Integer event_count, Integer aggregate_count, ?nanoseconds? projection_lag) -> untyped
+      def time: [T] (String metric_name, ?tags: Hash[Symbol, untyped]) { () -> T } -> T
+      def healthy?: () -> bool
+      def enabled?: () -> bool
+      def disable!: () -> false
+      def enable!: () -> true
+
+      # Protected: a backend's sink.
+      def send_metric: (String name, Numeric value, Hash[Symbol, untyped] tags, nanoseconds timestamp) -> untyped
+
+      private
+
+      attr_reader config: Hash[Symbol, untyped]
+    end
+
+    # Converts durations to seconds, Prometheus's base unit.
+    class PrometheusAdapter < TelemetryAdapter
+      private
+
+      # The Prometheus module; ArgumentError without the gem.
+      def default_prometheus: () -> untyped
+      def setup_default_metrics: () -> untyped
+      def get_or_create_counter: (String name, Hash[Symbol, untyped] tags) -> untyped
+      def get_or_create_gauge: (String name, Hash[Symbol, untyped] tags) -> untyped
+      def get_or_create_histogram: (String name, Hash[Symbol, untyped] tags) -> untyped
+      def seconds: (nanoseconds nanoseconds) -> Float
+    end
+
+    # Records durations as nanoseconds, unit 'ns'.
+    class OpentelemetryAdapter < TelemetryAdapter
+      def trace_feature_evaluation: [T] (untyped feature_id, untyped context) { () -> T } -> T
+      def trace_feature_execution: [T] (untyped feature_id, untyped state) { () -> T } -> T
+      def trace_state_transition: [T] (untyped feature_id, untyped from_state, untyped to_state,
+                                       untyped event_name) { () -> T } -> T
+
+      private
+
+      # ArgumentError without the OpenTelemetry gem.
+      def default_tracer: () -> untyped
+      def default_meter: () -> untyped
+      def setup_instruments: () -> untyped
+    end
+  end
+
+  # Include in a Rails controller with jsonrpc-rails. A refused command
+  # answers invalid_params carrying the refusal symbol.
+  module JsonrpcRailsAdapter
+    # Truthy (a `defined?` description) when jsonrpc-rails and ActionController
+    # are loaded.
+    def self.available?: () -> String?
+    def self.included: (Module base) -> void
+    # The JSON-RPC action. Not `process`: that is Rails' dispatch entry point.
+    def handle_jsonrpc: () -> untyped
+
+    # JSON_RPC::JsonRpcError.
+    type json_rpc_error = untyped
+    type params = Hash[String, untyped]
+    type outcome = Hash[Symbol, untyped] | json_rpc_error
+
+    private
+
+    # A JSON_RPC::Response, or nil for a notification.
+    def handle_single_request: (untyped req) -> untyped
+    def dispatch_method: (String method, params params) -> outcome
+    def create_feature: (params params) -> outcome
+    def get_feature: (params params) -> outcome
+    def list_features: (params params) -> outcome
+    def change_state: (params params) -> outcome
+    def execute_feature: (params params) ?{ () -> untyped } -> outcome
+    def evaluate_feature: (params params) -> outcome
+    def feature_stats: (params params) -> outcome
+    def recent_transitions: (params params) -> outcome
+    def system_health: (params params) -> outcome
+    def rebuild_projections: (params params) -> outcome
+    def refused: (Symbol refusal) -> json_rpc_error
+    # ArgumentError naming the missing keys.
+    def validate_required_params: (params params, Array[String] required_keys) -> nil
+    def build_response: (untyped id, outcome outcome) -> untyped
+    def feature_service: () -> Hexagonal::FeatureService
+  end
+end
+
+class Numeric
+  def percent: () -> self
+end

@@ -8,9 +8,10 @@ Gem::Specification.new do |spec|
   spec.authors = ['Abdelkader Boudih']
   spec.email = ['terminale@gmail.com']
 
-  spec.summary = 'A Ruby gem for building DSL-based star gate configurations'
-  spec.description = 'StarGates provides a domain-specific language for defining and managing ' \
-                     'star gate configurations with circuit breaker patterns.'
+  spec.summary = 'Feature flags, gradual rollouts and circuit-protected execution for Ruby'
+  spec.description = 'Boolean flags and gated features whose rollout transitions run on state_machines, ' \
+                     'with circuit protection from breaker_machines, retries from chrono_machines and ' \
+                     'time budgets from deadline_machines.'
   spec.homepage = 'https://github.com/seuros/star_gates'
   spec.license = 'BSD-3-Clause'
   spec.required_ruby_version = '>= 4.0.0'
@@ -36,14 +37,15 @@ Gem::Specification.new do |spec|
   # Dependencies
   spec.add_dependency 'activesupport', '>= 8.1.1'
   spec.add_dependency 'concurrent-ruby', '>= 1.3.5'
-  spec.add_dependency 'state_machines', '>= 0.202.0'
+  spec.add_dependency 'state_machines', '>= 0.301.1'
   spec.add_dependency 'zeitwerk', '>= 2.7.3'
 
-  # Ecosystem dependencies - distributed systems reliability
-  spec.add_dependency 'breaker_machines', '>= 0.22.1' # Circuit breaker pattern
-  spec.add_dependency 'deadline_machines', '>= 0.1'
-  spec.add_dependency 'probabilistic_machines', '>= 0.1'
-  spec.add_dependency 'chrono_machines', '>= 0.3.0' # Exponential backoff retries
+  # Ecosystem dependencies: Policy/Recovery circuits, Integer-nanosecond
+  # backoff shapes and deadlines, positional TDigest.
+  spec.add_dependency 'breaker_machines', '>= 0.28.0'
+  spec.add_dependency 'chrono_machines', '>= 0.13.0'
+  spec.add_dependency 'deadline_machines', '>= 0.2.0'
+  spec.add_dependency 'probabilistic_machines', '>= 0.6.1'
 
   # Optional dependencies
   # spec.add_dependency 'jsonrpc-rails'  # JSON-RPC API support (optional)

@@ -11,7 +11,7 @@ class Fighter < BaseSpaceship
 
   def configure_gates
     super
-    define_system(:weapons, threshold: 2, within: 30.seconds, reset_after: 20.seconds,
+    define_system(:weapons, policy(2, seconds(30), seconds(20)),
                   fallback: -> { 'Manual targeting' })
   end
 end

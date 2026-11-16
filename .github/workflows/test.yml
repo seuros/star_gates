@@ -1,0 +1,57 @@
+name: Test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Dictator
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: seuros/setup-dictator@master
+        with:
+          version: '0.28.1'
+      - run: dictator lint --format github .
+
+  # Pure Ruby: no core crate, so no crates or bare-metal jobs.
+  ruby:
+    runs-on: ubuntu-latest
+    env:
+      BUNDLE_PATH: vendor/bundle
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          mise_toml: |
+            [tools]
+            ruby = "4.0"
+
+      - name: Cache gems
+        uses: actions/cache@v6
+        with:
+          path: vendor/bundle
+          key: ${{ runner.os }}-gems-${{ hashFiles('Gemfile', '*.gemspec') }}
+
+      - name: Install gems
+        run: bundle install --jobs 4
+
+      - name: Run tests
+        run: bundle exec rake test
+
+      - name: Run Rails integration tests
+        run: bundle exec rake test:rails
+
+      - name: Validate signatures
+        run: bundle exec rbs -I sig validate

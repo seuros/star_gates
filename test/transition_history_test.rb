@@ -21,8 +21,11 @@ class TestTransitionHistory < Minitest::Test
     assert_equal 10, history[:limit]
   end
 
-  def test_state_duration_with_no_transitions
-    assert_equal 'No transitions yet', @feature.send(:state_duration)
+  def test_state_duration_with_no_transitions_counts_from_creation
+    duration = @feature.stats[:state_duration]
+    assert_kind_of Integer, duration
+    assert_operator duration, :>=, 0
+    assert_operator duration, :<=, StarGates.monotonic_time - @feature.created_at
   end
 
   def test_transition_tracking_on_state_change
@@ -42,8 +45,8 @@ class TestTransitionHistory < Minitest::Test
     assert_equal :disabled, transition[:from_state]
     assert_equal :canary, transition[:to_state]
     assert_equal :rollout_canary, transition[:event]
-    assert transition[:timestamp]
-    assert transition[:duration_since] >= 0
+    assert transition[:at]
+    assert transition[:age] >= 0
   end
 
   def test_multiple_state_transitions
@@ -90,17 +93,16 @@ class TestTransitionHistory < Minitest::Test
 
     assert_equal 'Feature', history[:feature_name] # Check the history's feature_name
     assert_equal 'StarGates::Feature', transition[:feature_class] if transition # Check transition metadata
-    assert transition[:timestamp] if transition
-    assert_kind_of Numeric, transition[:duration_since] if transition
+    assert transition[:at] if transition
+    assert_kind_of Integer, transition[:age] if transition
   end
 
   def test_state_duration_after_transition
     @feature.rollout_canary
 
-    # Should show time since last transition
-    duration = @feature.send(:state_duration)
-    refute_equal 'No transitions yet', duration
-    assert duration.end_with?('s') # Should be seconds for a recent transition
+    duration = @feature.stats[:state_duration]
+    assert_kind_of Integer, duration
+    assert_operator duration, :<=, StarGates.monotonic_time - @feature.transition_history[:transitions].first[:at]
   end
 
   def test_transition_history_limit
@@ -155,7 +157,7 @@ class TestTransitionHistory < Minitest::Test
     transition = raw_history.first
 
     # Check the structure matches what record_transition creates
-    assert transition[:timestamp]
+    assert transition[:at]
     assert_equal :disabled, transition[:from_state]
     assert_equal :canary, transition[:to_state]
     assert_equal :rollout_canary, transition[:event]

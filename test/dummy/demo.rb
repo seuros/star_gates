@@ -87,10 +87,10 @@ circuit = circuits['circuits'].first
 puts "Name: #{circuit['name']}"
 puts "State: #{red(circuit['state'])}"
 puts "Failures: #{circuit['failure_count']}"
-puts 'Config:'
-puts "  - Failure threshold: #{circuit['config']['failure_threshold']}"
-puts "  - Window: #{circuit['config']['failure_window']}s"
-puts "  - Reset timeout: #{circuit['config']['reset_timeout']}s"
+puts 'Policy:'
+puts "  - Failure threshold: #{circuit['policy']['failure_threshold']}"
+puts "  - Window: #{circuit['policy']['window']}ns"
+puts "  - Cooldown: #{circuit['policy']['cooldown']}ns"
 puts
 
 # Wait and show half-open

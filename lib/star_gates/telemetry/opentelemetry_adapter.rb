@@ -4,6 +4,7 @@ require_relative 'telemetry_adapter'
 
 module StarGates
   module Telemetry
+    # Durations are recorded as Integer nanoseconds, unit 'ns'.
     class OpentelemetryAdapter < TelemetryAdapter
       def initialize(config = {})
         super
@@ -23,12 +24,10 @@ module StarGates
                           'service.name' => @service_name,
                           'service.version' => @service_version
                         }) do |span|
-          start_time = Time.now
+          started = StarGates.monotonic_time
           result = block.call
-          duration = ((Time.now - start_time) * 1000).round(2)
-
           span.set_attribute('feature.eligible', result[:eligible]) if result.is_a?(Hash)
-          span.set_attribute('feature.evaluation.duration_ms', duration)
+          span.set_attribute('feature.evaluation.duration_ns', StarGates.monotonic_time - started)
           span.status = OpenTelemetry::Trace::Status.ok
 
           result
@@ -44,19 +43,16 @@ module StarGates
                           'service.name' => @service_name,
                           'service.version' => @service_version
                         }) do |span|
-          start_time = Time.now
+          started = StarGates.monotonic_time
           begin
             result = block.call
-            duration = ((Time.now - start_time) * 1000).round(2)
-
-            span.set_attribute('feature.execution.duration_ms', duration)
+            span.set_attribute('feature.execution.duration_ns', StarGates.monotonic_time - started)
             span.set_attribute('feature.execution.success', true)
             span.status = OpenTelemetry::Trace::Status.ok
 
             result
           rescue StandardError => e
-            duration = ((Time.now - start_time) * 1000).round(2)
-            span.set_attribute('feature.execution.duration_ms', duration)
+            span.set_attribute('feature.execution.duration_ns', StarGates.monotonic_time - started)
             span.set_attribute('feature.execution.success', false)
             span.set_attribute('feature.execution.error', e.message)
             span.status = OpenTelemetry::Trace::Status.error(e.message)
@@ -80,6 +76,68 @@ module StarGates
           span.status = OpenTelemetry::Trace::Status.ok
           result
         end
+      end
+
+      def healthy?
+        super && @tracer.respond_to?(:in_span) && @meter.respond_to?(:create_counter)
+      end
+
+      # Override specific methods to use pre-created instruments
+      def record_feature_evaluation(feature_id, eligible, _context, execution_time = nil)
+        return unless enabled?
+
+        attributes = {
+          'feature.id' => feature_id.to_s,
+          'feature.eligible' => eligible.to_s,
+          'service.name' => @service_name,
+          'service.version' => @service_version
+        }
+
+        @instruments['feature_evaluations_total'].add(1, attributes: attributes)
+
+        return unless execution_time
+
+        @instruments['evaluation_duration'].record(execution_time, attributes: {
+                                                     'feature.id' => feature_id.to_s,
+                                                     'feature.eligible' => eligible.to_s,
+                                                     'service.name' => @service_name,
+                                                     'service.version' => @service_version
+                                                   })
+      end
+
+      def record_feature_execution(feature_id, state, success, execution_time, _context = {})
+        return unless enabled?
+
+        attributes = {
+          'feature.id' => feature_id.to_s,
+          'feature.state' => state.to_s,
+          'feature.success' => success.to_s,
+          'service.name' => @service_name,
+          'service.version' => @service_version
+        }
+
+        @instruments['feature_executions_total'].add(1, attributes: attributes)
+        @instruments['execution_duration'].record(execution_time, attributes: {
+                                                    'feature.id' => feature_id.to_s,
+                                                    'feature.state' => state.to_s,
+                                                    'service.name' => @service_name,
+                                                    'service.version' => @service_version
+                                                  })
+      end
+
+      def record_state_transition(feature_id, from_state, to_state, event_name)
+        return unless enabled?
+
+        attributes = {
+          'feature.id' => feature_id.to_s,
+          'feature.transition.from' => from_state.to_s,
+          'feature.transition.to' => to_state.to_s,
+          'feature.transition.event' => event_name.to_s,
+          'service.name' => @service_name,
+          'service.version' => @service_version
+        }
+
+        @instruments['state_transitions_total'].add(1, attributes: attributes)
       end
 
       protected
@@ -113,14 +171,10 @@ module StarGates
           instrument_name = name.gsub(/\.(histogram|timing)$/, '').gsub('.', '_')
           histogram = @instruments["#{instrument_name}_duration"] ||=
             @meter.create_histogram("star_gates_#{instrument_name}_duration",
-                                    unit: 'ms',
+                                    unit: 'ns',
                                     description: "Duration histogram for #{instrument_name}")
           histogram.record(value, attributes: attributes)
         end
-      end
-
-      def healthy?
-        super && @tracer.respond_to?(:in_span) && @meter.respond_to?(:create_counter)
       end
 
       private
@@ -166,13 +220,13 @@ module StarGates
 
         @instruments['evaluation_duration'] = @meter.create_histogram(
           'star_gates_evaluation_duration',
-          unit: 'ms',
+          unit: 'ns',
           description: 'Feature evaluation duration'
         )
 
         @instruments['execution_duration'] = @meter.create_histogram(
           'star_gates_execution_duration',
-          unit: 'ms',
+          unit: 'ns',
           description: 'Feature execution duration'
         )
 
@@ -188,64 +242,6 @@ module StarGates
             observer.observe(data[:value], attributes: data[:attributes])
           end
         end
-      end
-
-      # Override specific methods to use pre-created instruments
-      def record_feature_evaluation(feature_id, eligible, _context, execution_time_ms = nil)
-        return unless enabled?
-
-        attributes = {
-          'feature.id' => feature_id.to_s,
-          'feature.eligible' => eligible.to_s,
-          'service.name' => @service_name,
-          'service.version' => @service_version
-        }
-
-        @instruments['feature_evaluations_total'].add(1, attributes: attributes)
-
-        return unless execution_time_ms
-
-        @instruments['evaluation_duration'].record(execution_time_ms, attributes: {
-                                                     'feature.id' => feature_id.to_s,
-                                                     'feature.eligible' => eligible.to_s,
-                                                     'service.name' => @service_name,
-                                                     'service.version' => @service_version
-                                                   })
-      end
-
-      def record_feature_execution(feature_id, state, success, execution_time_ms, _context = {})
-        return unless enabled?
-
-        attributes = {
-          'feature.id' => feature_id.to_s,
-          'feature.state' => state.to_s,
-          'feature.success' => success.to_s,
-          'service.name' => @service_name,
-          'service.version' => @service_version
-        }
-
-        @instruments['feature_executions_total'].add(1, attributes: attributes)
-        @instruments['execution_duration'].record(execution_time_ms, attributes: {
-                                                    'feature.id' => feature_id.to_s,
-                                                    'feature.state' => state.to_s,
-                                                    'service.name' => @service_name,
-                                                    'service.version' => @service_version
-                                                  })
-      end
-
-      def record_state_transition(feature_id, from_state, to_state, event_name)
-        return unless enabled?
-
-        attributes = {
-          'feature.id' => feature_id.to_s,
-          'feature.transition.from' => from_state.to_s,
-          'feature.transition.to' => to_state.to_s,
-          'feature.transition.event' => event_name.to_s,
-          'service.name' => @service_name,
-          'service.version' => @service_version
-        }
-
-        @instruments['state_transitions_total'].add(1, attributes: attributes)
       end
     end
   end

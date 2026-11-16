@@ -15,9 +15,9 @@ class ExplorerShip < BaseSpaceship
 
   def configure_gates
     super
-    define_system(:scanner, threshold: 1, within: 10.seconds, reset_after: 5.seconds,
+    define_system(:scanner, policy(1, seconds(10), seconds(5)),
                   fallback: -> { 'Using archived planetary charts' })
-    define_system(:probe_launcher, threshold: 3, within: 1.minute, reset_after: 30.seconds,
+    define_system(:probe_launcher, policy(3, seconds(60), seconds(30)),
                   fallback: -> { 'Probe launch postponed' })
   end
 end

@@ -10,12 +10,26 @@ class FlagsTest < Minitest::Test
     @flags = StarGates::Flags.new(env: @env, configuration: -> { @configuration })
   end
 
-  def test_unknown_and_invalid_flags_are_disabled
-    [nil, '', 123, [], {}, 'missing', 'bad name'].each do |name|
-      refute @flags.enabled?(name)
-      assert_equal 'default', @flags.debug(name)[:source]
+  def test_unknown_flags_are_disabled
+    refute @flags.enabled?('missing')
+    assert_equal 'default', @flags.debug(:missing)[:source]
+  end
+
+  def test_a_name_of_another_type_is_a_type_error
+    [nil, 123, [], {}].each do |name|
+      %i[enabled? debug flag_status remove enable disable].each do |method|
+        assert_raises(TypeError) { @flags.public_send(method, name) }
+      end
+      assert_raises(TypeError) { @flags.set(name, true) }
     end
-    assert_raises(ArgumentError) { @flags.enable(nil) }
+  end
+
+  def test_a_malformed_name_is_a_range_error
+    ['', 'bad name', 'flag!'].each do |name|
+      %i[enabled? debug flag_status remove enable disable].each do |method|
+        assert_raises(RangeError) { @flags.public_send(method, name) }
+      end
+    end
   end
 
   def test_precedence_and_explicit_false
@@ -56,7 +70,7 @@ class FlagsTest < Minitest::Test
 
   def test_invalid_configuration_is_not_silently_swallowed
     @flags.configuration = -> {}
-    assert_raises(ArgumentError) { @flags.enabled?(:copilot) }
+    assert_raises(TypeError) { @flags.enabled?(:copilot) }
   end
 
   def test_boolean_strings_are_consistent_for_environment_and_runtime

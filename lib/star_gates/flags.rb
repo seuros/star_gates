@@ -4,6 +4,9 @@ module StarGates
   # Boolean flags with environment > configuration > runtime > false precedence.
   # Runtime state uses Feature's lifecycle and is local to this process unless
   # a shared store is configured.
+  #
+  # A flag name is a String or Symbol of letters, digits, `_` or `-` (case and
+  # dashes fold): TypeError for another type, RangeError for another String.
   class Flags
     FIRST_SLOT = 1
     CLAIM_WINNER = 1
@@ -48,9 +51,9 @@ module StarGates
     end
 
     def remove(name)
-      normalized = normalize(name)
+      normalized = flag_name(name)
       if @store
-        store_remove(normalized) if normalized
+        store_remove(normalized)
       else
         @mutex.synchronize { @runtime.delete(normalized) }
       end
@@ -83,14 +86,14 @@ module StarGates
     end
 
     def debug(name)
-      normalized = normalize(name)
+      normalized = flag_name(name)
       resolution(normalized, configuration_flags, runtime_value(normalized))
     end
 
     def flag_status(name)
-      normalized = normalize(name)
+      normalized = flag_name(name)
       details = debug(normalized)
-      { name: normalized&.to_sym, enabled: details[:enabled], source: details[:source],
+      { name: normalized.to_sym, enabled: details[:enabled], source: details[:source],
         metadata: runtime_metadata(normalized) }
     end
 
@@ -103,14 +106,20 @@ module StarGates
       normalized if normalized.match?(/\A[a-z0-9_]+\z/)
     end
 
+    def flag_name(name)
+      unless name.is_a?(String) || name.is_a?(Symbol)
+        raise TypeError, "flag name must be a String or Symbol, got #{name.inspect}"
+      end
+
+      normalize(name) || raise(RangeError, "flag name must be letters, digits, _ or -, got #{name.inspect}")
+    end
+
     def boolean(value)
       value == true || (value.is_a?(String) && %w[true 1 yes on].include?(value.downcase))
     end
 
     def update(name, value, metadata: nil)
-      normalized = normalize(name)
-      raise ArgumentError, 'flag name must be a nonempty string or symbol' unless normalized
-
+      normalized = flag_name(name)
       enabled = boolean(value)
       return store_update(normalized, enabled, metadata) if @store
 
@@ -218,13 +227,23 @@ module StarGates
     end
 
     def reclaimed_slot(entries)
-      slot_range.find { |slot| !entries.key?(slot) && @store.increment(slot_claim_key(slot)) == CLAIM_WINNER }
+      slot_range.find { |slot| !entries.key?(slot) && store_increment(slot_claim_key(slot)) == CLAIM_WINNER }
     end
 
     def appended_slot
-      slot = @store.increment(index_sequence_key)
-      @store.increment(slot_claim_key(slot))
+      slot = store_increment(index_sequence_key)
+      store_increment(slot_claim_key(slot))
       slot
+    end
+
+    # The store's new count. A store whose increment answers anything but an
+    # Integer (ActiveSupport::Cache::NullStore answers nil) cannot keep the
+    # index: raised before the name or the flag is written.
+    def store_increment(key)
+      count = @store.increment(key)
+      return count if count.is_a?(Integer)
+
+      raise Error, "#{@store.class} did not increment #{key}"
     end
 
     def sequenced_index?
@@ -301,7 +320,7 @@ module StarGates
 
     def configuration_flags
       values = configuration.is_a?(Proc) ? configuration.call : configuration
-      raise ArgumentError, 'configuration must be a Hash or a Proc returning a Hash' unless values.is_a?(Hash)
+      raise TypeError, 'configuration must be a Hash or a Proc returning a Hash' unless values.is_a?(Hash)
 
       values.each_with_object({}) do |(name, value), flags|
         normalized = normalize(name)

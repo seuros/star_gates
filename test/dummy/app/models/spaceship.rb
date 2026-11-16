@@ -20,12 +20,11 @@ class Spaceship < BaseShip
 
   def configure_gates
     super
-    define_system(:warp_drive, group: :pilots, threshold: 3, within: 1.minute, reset_after: 30.seconds,
-                  fallback: method(:emergency_propulsion))
-    define_system(:fusion_reactor, threshold: 2, within: 30.seconds, reset_after: 45.seconds,
-                  retry_config: { max_attempts: 2, base_delay: 0.001 },
+    define_system(:warp_drive, policy(3, seconds(60), seconds(30)),
+                  group: :pilots, fallback: method(:emergency_propulsion))
+    define_system(:fusion_reactor, policy(2, seconds(30), seconds(45)), retry_policy(2),
                   fallback: method(:backup_power_supply))
-    define_system(:navigation_computer, threshold: 5, within: 2.minutes, reset_after: 20.seconds,
+    define_system(:navigation_computer, policy(5, seconds(120), seconds(20)),
                   fallback: method(:manual_navigation))
   end
 

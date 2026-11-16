@@ -28,6 +28,10 @@ class FlagsStoreTest < Minitest::Test
     def write(*) = false
   end
 
+  class UncountingStore < ActiveSupport::Cache::MemoryStore
+    def increment(*) = nil
+  end
+
   def setup
     super
     @store = ActiveSupport::Cache::MemoryStore.new
@@ -182,9 +186,11 @@ class FlagsStoreTest < Minitest::Test
     assert @flags.enabled?(:copilot)
   end
 
+  # NullStore keeps nothing and its increment answers nil, so a flag cannot be
+  # indexed there: writing one raises, reading falls back to the default.
   def test_store_without_values_falls_back_to_default
     flags = StarGates::Flags.new(env: {}, configuration: {}, store: ActiveSupport::Cache::NullStore.new)
-    flags.enable(:copilot, metadata: { reason: 'lost' })
+    assert_raises(StarGates::Error) { flags.enable(:copilot, metadata: { reason: 'lost' }) }
 
     refute flags.enabled?(:copilot)
     assert_equal 'default', flags.debug(:copilot)[:source]
@@ -197,6 +203,20 @@ class FlagsStoreTest < Minitest::Test
 
     error = assert_raises(StarGates::Error) { flags.enable(:copilot) }
     assert_match(/did not persist/, error.message)
+  end
+
+  # Bug: an increment answering nil filed the name under "<prefix>:name:"
+  # (no slot), outside every slot the index reads, after which the flag was
+  # written yet never listed. Now it raises before anything is written.
+  def test_an_increment_answering_nil_raises_and_writes_nothing
+    store = UncountingStore.new
+    flags = StarGates::Flags.new(env: {}, configuration: {}, store: store)
+
+    error = assert_raises(StarGates::Error) { flags.enable(:copilot) }
+    assert_match(/did not increment/, error.message)
+    assert_nil store.read('star_gates:flags:name:')
+    assert_nil store.read('star_gates:flags:flag:copilot')
+    assert_empty flags.all
   end
 
   def test_stores_without_multi_key_operations

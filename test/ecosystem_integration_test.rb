@@ -6,7 +6,7 @@ require 'test_helper'
 class EcosystemIntegrationTest < Minitest::Test
   def test_state_machines_powers_breaker_machines
     # StateMachines powers BreakerMachines state transitions
-    circuit = StarGates::Circuit.new(threshold: 2, within: 30)
+    circuit = StarGates::Circuit.new(breaker_policy(2, within: seconds(30)))
 
     # Circuit should have a breaker (BreakerMachines::Circuit)
     assert circuit.breaker, 'No breaker found'
@@ -21,11 +21,7 @@ class EcosystemIntegrationTest < Minitest::Test
 
   def test_chrono_machines_integrates_with_circuit
     call_count = 0
-    circuit = StarGates::Circuit.new(
-      threshold: 5,
-      within: 30,
-      retry_config: { max_attempts: 3, base_delay: 0.001 }
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(5, within: seconds(30)), quick_retry(3))
 
     # Should use ChronoMachines for retry
     result = circuit.call do
@@ -42,15 +38,15 @@ class EcosystemIntegrationTest < Minitest::Test
   def test_full_ecosystem_stack
     # BreakerMachines (circuit breaker) + ChronoMachines (retry jitter) + StateMachines (state)
     call_count = 0
+    policy = breaker_policy(3)
+    retry_policy = quick_retry(3)
 
     StarGates.define do
       gate :ecosystem_test do
         feature rollout: 100
 
         # BreakerMachines circuit with ChronoMachines retry
-        circuit threshold: 3,
-                within: 30.seconds,
-                retry_config: { max_attempts: 3, base_delay: 0.001 }
+        circuit policy, retry_policy
 
         run do
           call_count += 1
@@ -84,11 +80,7 @@ class EcosystemIntegrationTest < Minitest::Test
     #   │   └── StateMachines (gives it life)
     #   └── ChronoMachines (retry-jitter)
 
-    circuit = StarGates::Circuit.new(
-      threshold: 3,
-      within: 30,
-      retry_config: { max_attempts: 3 }
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(3, within: seconds(30)), quick_retry(3))
 
     # Has BreakerMachines circuit
     assert circuit.breaker.is_a?(BreakerMachines::Circuit)

@@ -26,8 +26,8 @@ class ApplicationStarGatesControllerTest < ActionDispatch::IntegrationTest
     assert json_response['introspection']
     assert json_response['configuration_summary']
     assert json_response['performance_stats']
-    assert json_response['feature_identifier']
-    assert_equal 'demo_payment_processing', json_response['feature_identifier']
+    assert json_response['feature_name']
+    assert_equal 'demo_payment_processing', json_response['feature_name']
   end
 
   test 'should execute application star gate feature' do
@@ -40,7 +40,7 @@ class ApplicationStarGatesControllerTest < ActionDispatch::IntegrationTest
 
     json_response = JSON.parse(response.body)
     assert json_response['result']
-    assert json_response['execution_time_ms']
+    assert_kind_of Integer, json_response['execution_time']
     assert json_response['performance_stats']
     assert_equal 'test execution', json_response['result']
   end

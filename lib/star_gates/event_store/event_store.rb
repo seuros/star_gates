@@ -8,21 +8,12 @@ module StarGates
         @subscribers = Hash.new { |h, k| h[k] = [] }
       end
 
-      # Append events to the store
+      # Appends the events and answers how many, or :version_conflict when
+      # `expected_version` is not the aggregate's version (nothing stored).
       def append(aggregate_id, events, expected_version: nil)
         events = Array(events)
-        return if events.empty?
-
-        # Validate expected version for optimistic concurrency
-        if expected_version
-          current_version = @adapter.get_version(aggregate_id)
-          if current_version != expected_version
-            raise ConcurrencyError, "Expected version #{expected_version}, got #{current_version}"
-          end
-        end
-
-        # Store events
-        @adapter.append(aggregate_id, events)
+        return 0 if events.empty?
+        return :version_conflict unless @adapter.append(aggregate_id, events, expected_version)
 
         # Notify subscribers
         events.each do |event|
@@ -37,7 +28,8 @@ module StarGates
         @adapter.get_events(aggregate_id, from_version: from_version)
       end
 
-      # Get all events from a specific time
+      # Events at or after `timestamp` (wall-clock Integer nanoseconds),
+      # newest first.
       def get_events_from(timestamp, limit: 100)
         @adapter.get_events_from(timestamp, limit: limit)
       end
@@ -73,7 +65,5 @@ module StarGates
         @subscribers[:all].each { |subscriber| subscriber.call(event) }
       end
     end
-
-    class ConcurrencyError < StandardError; end
   end
 end

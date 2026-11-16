@@ -2,7 +2,7 @@
 
 class DemoExperimentalFeature < StarGates::ApplicationStarGate
   configure 'demo_ai_recommendations',
-            timeout: 5.0,
+            timeout: 5_000_000_000,
             retry_count: 1,
             circuit_breaker_threshold: 3,
             performance_monitoring: true,
@@ -54,7 +54,7 @@ class DemoExperimentalFeature < StarGates::ApplicationStarGate
         features_used: config['features'],
         real_time_learning: config['real_time_learning'],
         generated_at: Time.current,
-        processing_time_ms: (sleep_time * 1000).round(2)
+        processing_time: (sleep_time * 1_000_000_000).round
       }
     end
   end

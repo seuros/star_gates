@@ -4,6 +4,8 @@ require 'securerandom'
 
 module StarGates
   module Events
+    # An immutable domain event. `occurred_at` is wall-clock Integer
+    # nanoseconds since the Unix epoch: events outlive the process.
     class BaseEvent
       attr_reader :event_id, :aggregate_id, :event_type, :data, :metadata, :occurred_at, :version
 
@@ -16,7 +18,7 @@ module StarGates
           source: 'star_gates',
           correlation_id: Thread.current[:correlation_id] || SecureRandom.uuid
         ).freeze
-        @occurred_at = Time.now.utc
+        @occurred_at = StarGates.wall_time
         @version = version
         freeze
       end

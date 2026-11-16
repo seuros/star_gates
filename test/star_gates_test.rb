@@ -50,10 +50,11 @@ class TestStarGates < Minitest::Test
 
   def test_dsl_gate_with_circuit_breaker
     call_count = 0
+    policy = breaker_policy(2)
 
     StarGates.define do
       gate :circuit_gate do
-        circuit threshold: 2, within: 30.seconds, reset_after: 1.minute
+        circuit policy
         run do
           call_count += 1
           raise StandardError if call_count <= 3
@@ -84,7 +85,7 @@ class TestStarGates < Minitest::Test
   end
 
   def test_runtime_api_gate_not_found
-    assert_raises(StarGates::GateNotFoundError) do
+    assert_raises(KeyError) do
       StarGates[:nonexistent_gate]
     end
   end
@@ -155,5 +156,51 @@ class TestStarGates < Minitest::Test
 
     StarGates.production_mode!
     refute StarGates.test_mode?
+  end
+
+  def test_gate_builder_records_the_declarations
+    policy = breaker_policy
+    retry_policy = quick_retry
+    builder = StarGates::DSL::GateBuilder.new(:built)
+    assert_nil builder.circuit_config
+
+    builder.feature(rollout: 10, group: :beta)
+    builder.circuit(policy, retry_policy)
+    builder.run { :ran }
+    builder.fallback { :fallback }
+
+    assert_equal :built, builder.name
+    assert_equal({ rollout: 10, group: :beta }, builder.feature_config)
+    assert_equal [policy, retry_policy], builder.circuit_config
+    gate = builder.build
+    assert_same retry_policy, gate.circuit.retry_policy
+    assert_same gate.feature, gate.circuit.feature
+    assert_equal :ran, builder.run_block.call
+    assert_equal :fallback, builder.fallback_block.call
+  end
+
+  def test_registry_queries
+    registry = StarGates::Registry.new
+    assert registry.empty?
+    gate = StarGates::Gate.new(:g)
+    registry.register('g', gate)
+
+    refute registry.empty?
+    assert_same gate, registry['g']
+    assert_nil registry[:missing]
+    assert_same gate, registry.fetch(:g)
+    assert_equal :none, registry.fetch(:missing, :none)
+    assert_equal :missing, registry.fetch(:missing) { |name| name }
+    assert_raises(KeyError) { registry.fetch(:missing) }
+    assert registry.include?(:g)
+    assert_equal [:g], registry.keys
+    assert_equal [gate], registry.values
+    assert_equal 1, registry.size
+    assert_equal({ g: gate }, registry.to_h)
+    seen = []
+    registry.each { |name, _| seen << name }
+    assert_equal [:g], seen
+    registry.clear
+    assert registry.empty?
   end
 end

@@ -8,7 +8,7 @@ module StarGates
       def initialize(name)
         @name = name
         @feature_config = {}
-        @circuit_config = {}
+        @circuit_config = nil
         @run_block = nil
         @fallback_block = nil
       end
@@ -17,13 +17,10 @@ module StarGates
         @feature_config = { rollout: rollout, group: group }
       end
 
-      def circuit(threshold: 5, within: 30.seconds, reset_after: 1.minute, retry_config: nil)
-        @circuit_config = {
-          threshold: threshold,
-          within: within,
-          reset_after: reset_after,
-          retry_config: retry_config
-        }
+      # A BreakerMachines::Policy and an optional RetryPolicy, as
+      # Circuit.new takes them; the circuit is wired to this gate's feature.
+      def circuit(policy, retry_policy = nil)
+        @circuit_config = [policy, retry_policy]
       end
 
       def run(&block)
@@ -36,7 +33,7 @@ module StarGates
 
       def build
         feature_instance = build_feature if feature_config.any?
-        circuit_instance = build_circuit(feature_instance) if circuit_config.any?
+        circuit_instance = build_circuit(feature_instance) if circuit_config
 
         StarGates::Gate.new(
           name,
@@ -55,7 +52,7 @@ module StarGates
 
       def build_circuit(feature)
         # Wire circuit to feature for self-healing behavior
-        StarGates::Circuit.new(**circuit_config, feature: feature)
+        StarGates::Circuit.new(*circuit_config, feature: feature)
       end
     end
 

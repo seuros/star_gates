@@ -3,12 +3,16 @@
 class WeatherController < ApplicationController
   include BreakerMachines::DSL
 
+  NS_PER_SECOND = 1_000_000_000
+  # Opens after 3 failures in a minute; probes again after 30 seconds.
+  WEATHER_POLICY = BreakerMachines::Policy.new(BreakerMachines::Threshold.new(3, nil, 0), 60 * NS_PER_SECOND,
+                                               BreakerMachines::Recovery.new(30 * NS_PER_SECOND, 0.0, 1, 1), nil)
+
   def circuit(name)
     case name
     when :weather_api
       dynamic_circuit(:weather_api, global: true) do
-        threshold failures: 3, within: 60
-        reset_after 30
+        policy WEATHER_POLICY
         fallback do |_error|
           {
             temperature: 72,

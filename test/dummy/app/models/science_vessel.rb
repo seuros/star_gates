@@ -48,13 +48,13 @@ class ScienceVessel < BaseShip
 
   def configure_gates
     super
-    define_system(:sensor_array, threshold: 1, within: 30.seconds, reset_after: 90.seconds,
+    define_system(:sensor_array, policy(1, seconds(30), seconds(90)),
                   fallback: method(:use_basic_sensors))
-    define_system(:laboratory, threshold: 3, within: 3.minutes, reset_after: 2.minutes,
+    define_system(:laboratory, policy(3, seconds(180), seconds(120)),
                   fallback: method(:pause_experiments))
-    define_system(:probe_launcher, threshold: 5, within: 5.minutes, reset_after: 45.seconds,
+    define_system(:probe_launcher, policy(5, seconds(300), seconds(45)),
                   fallback: method(:prepare_manual_launch))
-    define_system(:containment_field, threshold: 1, within: 1.hour, reset_after: 10.minutes,
+    define_system(:containment_field, policy(1, seconds(3600), seconds(600)),
                   fallback: method(:emergency_containment_protocol))
   end
 

@@ -32,13 +32,13 @@ module StarGates
         output.puts "Full rollout: #{ship.engage_warp('Alpha Centauri', **passenger)}"
 
         # Failures exercise the real circuit, not a manual feature transition.
-        warp.circuit.threshold.times { ship.engage_warp(:unstable_sector, **pilot) }
+        warp.circuit.policy.threshold.count.times { ship.engage_warp(:unstable_sector, **pilot) }
         output.puts "Automatic rollback: #{warp.feature.status}; circuit open: #{warp.open?}"
         output.puts "Safe propulsion: #{ship.engage_warp('Alpha Centauri', **pilot)}"
 
         # Repair and operator approval are explicit. Resetting a circuit does not
         # silently restore a feature to full rollout.
-        warp.circuit.reset!
+        warp.circuit.reset
         output.puts "Repaired, pilot canary: #{ship.engage_warp('Alpha Centauri', **pilot)}"
         warp.feature.enable
         output.puts "Operator-approved rollout: #{ship.engage_warp('Alpha Centauri', **passenger)}"

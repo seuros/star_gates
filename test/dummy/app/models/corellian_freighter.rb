@@ -11,9 +11,9 @@ class CorellianFreighter < BaseSpaceship
 
   def configure_gates
     super
-    define_system(:cargo_bay, threshold: 10, within: 5.minutes, reset_after: 2.minutes,
+    define_system(:cargo_bay, policy(10, seconds(300), seconds(120)),
                   fallback: -> { 'Cargo handling paused' })
-    define_system(:engine, threshold: 5, within: 2.minutes, reset_after: 1.minute,
+    define_system(:engine, policy(5, seconds(120), seconds(60)),
                   fallback: -> { 'Auxiliary thrusters' })
   end
 end

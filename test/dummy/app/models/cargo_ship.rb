@@ -58,13 +58,13 @@ class CargoShip < BaseShip
 
   def configure_gates
     super
-    define_system(:cargo_bay, threshold: 10, within: 5.minutes, reset_after: 2.minutes,
+    define_system(:cargo_bay, policy(10, seconds(300), seconds(120)),
                   fallback: method(:use_manual_cargo_handling))
-    define_system(:refrigeration, threshold: 1, within: 10.minutes, reset_after: 5.minutes,
+    define_system(:refrigeration, policy(1, seconds(600), seconds(300)),
                   fallback: method(:activate_backup_cooling))
-    define_system(:docking_clamps, threshold: 5, within: 2.minutes, reset_after: 1.minute,
+    define_system(:docking_clamps, policy(5, seconds(120), seconds(60)),
                   fallback: method(:use_magnetic_locks))
-    define_system(:life_support, threshold: 5, within: 2.minutes, reset_after: 1.minute,
+    define_system(:life_support, policy(5, seconds(120), seconds(60)),
                   fallback: method(:activate_zone_isolation))
   end
 

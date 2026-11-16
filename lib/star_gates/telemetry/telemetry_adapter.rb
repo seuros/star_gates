@@ -2,6 +2,9 @@
 
 module StarGates
   module Telemetry
+    # Metrics sink. Every duration handed to it is Integer nanoseconds and
+    # every timestamp wall-clock Integer nanoseconds; a backend converts at
+    # its own boundary.
     class TelemetryAdapter
       def initialize(config = {})
         @config = config
@@ -9,7 +12,7 @@ module StarGates
       end
 
       # Core telemetry methods
-      def record_metric(name, value, tags: {}, timestamp: Time.now)
+      def record_metric(name, value, tags: {}, timestamp: StarGates.wall_time)
         return unless enabled?
 
         send_metric(name, value, tags, timestamp)
@@ -33,14 +36,14 @@ module StarGates
         record_metric("#{name}.histogram", value, tags: tags)
       end
 
-      def record_timing(name, duration_ms, tags: {})
+      def record_timing(name, duration, tags: {})
         return unless enabled?
 
-        record_metric("#{name}.timing", duration_ms, tags: tags)
+        record_metric("#{name}.timing", duration, tags: tags)
       end
 
       # Feature flag specific metrics
-      def record_feature_evaluation(feature_id, eligible, _context, execution_time_ms = nil)
+      def record_feature_evaluation(feature_id, eligible, _context, execution_time = nil)
         return unless enabled?
 
         tags = {
@@ -50,12 +53,12 @@ module StarGates
 
         record_counter('star_gates.feature.evaluation', 1, tags: tags)
 
-        return unless execution_time_ms
+        return unless execution_time
 
-        record_timing('star_gates.feature.evaluation.duration', execution_time_ms, tags: tags)
+        record_timing('star_gates.feature.evaluation.duration', execution_time, tags: tags)
       end
 
-      def record_feature_execution(feature_id, state, success, execution_time_ms, _context = {})
+      def record_feature_execution(feature_id, state, success, execution_time, _context = {})
         return unless enabled?
 
         tags = {
@@ -65,7 +68,7 @@ module StarGates
         }
 
         record_counter('star_gates.feature.execution', 1, tags: tags)
-        record_timing('star_gates.feature.execution.duration', execution_time_ms, tags: tags)
+        record_timing('star_gates.feature.execution.duration', execution_time, tags: tags)
       end
 
       def record_state_transition(feature_id, from_state, to_state, event_name)
@@ -105,26 +108,24 @@ module StarGates
         end
       end
 
-      def record_event_store_metrics(event_count, aggregate_count, projection_lag_ms = nil)
+      def record_event_store_metrics(event_count, aggregate_count, projection_lag = nil)
         return unless enabled?
 
         record_gauge('star_gates.event_store.events', event_count)
         record_gauge('star_gates.event_store.aggregates', aggregate_count)
 
-        return unless projection_lag_ms
+        return unless projection_lag
 
-        record_timing('star_gates.event_store.projection_lag', projection_lag_ms)
+        record_timing('star_gates.event_store.projection_lag', projection_lag)
       end
 
       # Time a block and record the duration
       def time(metric_name, tags: {}, &block)
         return block.call unless enabled?
 
-        start_time = Time.now
+        started = StarGates.monotonic_time
         result = block.call
-        duration_ms = ((Time.now - start_time) * 1000).round(2)
-
-        record_timing(metric_name, duration_ms, tags: tags)
+        record_timing(metric_name, StarGates.monotonic_time - started, tags: tags)
         result
       end
 

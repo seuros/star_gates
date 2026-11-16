@@ -5,13 +5,21 @@ require 'state_machines'
 require 'concurrent'
 
 module StarGates
+  # A feature's lifecycle (disabled, canary, enabled) and who it reaches.
+  #
+  # `rollout:` is an Integer percentage, 0..100; `group:` is nil, a Symbol
+  # matched against `context[:groups]`, or a Proc called with the context.
+  # TypeError for another type, RangeError for a rollout outside 0..100.
+  # Instants and spans are monotonic Integer nanoseconds.
   class Feature
-    attr_reader :rollout_percentage, :group_matcher
+    TRANSITIONS_KEPT = 50
+
+    attr_reader :rollout_percentage, :group_matcher, :created_at
 
     def initialize(rollout: 0, group: nil)
-      @rollout_percentage = parse_rollout(rollout)
-      @group_matcher = group
-      @created_at = Time.now
+      @rollout_percentage = Rollout.validated(rollout)
+      @group_matcher = validated_group(group)
+      @created_at = StarGates.monotonic_time
       @transition_history = Concurrent::Array.new
       super()
     end
@@ -153,7 +161,7 @@ module StarGates
         status_name: status_name,
         rollout_percentage: rollout_percentage,
         group_matcher: group_matcher_info,
-        created_at: @created_at,
+        created_at: created_at,
         state_duration: state_duration,
         total_transitions: transition_count
       }
@@ -170,7 +178,8 @@ module StarGates
       }
     end
 
-    # Human-readable feature status summary
+    # Human-readable feature status summary. `status` is always one of the
+    # state machine's three states, so there is no other branch.
     def summary
       case status
       when 'disabled'
@@ -183,8 +192,6 @@ module StarGates
         else
           "Feature '#{feature_name}' is in CANARY mode with #{rollout_percentage}% rollout."
         end
-      else
-        "Feature '#{feature_name}' is in unknown state: #{status}."
       end
     end
 
@@ -197,7 +204,7 @@ module StarGates
         stats: stats,
         configuration: configuration,
         summary: summary,
-        introspected_at: Time.now
+        introspected_at: StarGates.monotonic_time
       }
     end
 
@@ -277,22 +284,15 @@ module StarGates
       scenarios
     end
 
-    # Get transition history for this feature
+    # The last `limit` transitions, newest first. `at` is the monotonic
+    # instant of each, `age` the span since, `occurred_at` the wall-clock
+    # instant, Integer nanoseconds.
     def transition_history(limit: 10)
+      now = StarGates.monotonic_time
       {
         feature_name: feature_name,
         total_transitions: @transition_history.size,
-        transitions: @transition_history.last(limit).reverse.map do |transition|
-          {
-            timestamp: transition[:timestamp],
-            from_state: transition[:from_state],
-            to_state: transition[:to_state],
-            event: transition[:event],
-            feature_name: transition[:feature_name],
-            feature_class: transition[:feature_class],
-            duration_since: Time.now - transition[:timestamp]
-          }
-        end,
+        transitions: @transition_history.last(limit).reverse.map { |entry| entry.merge(age: now - entry[:at]) },
         limit: limit
       }
     end
@@ -315,25 +315,14 @@ module StarGates
         { type: 'symbol', value: group_matcher }
       when Proc
         { type: 'proc', value: '<Proc>' }
-      when nil
-        nil
-      else
-        { type: group_matcher.class.name, value: group_matcher.to_s }
       end
     end
 
+    # Integer nanoseconds in the current state, since creation when it never
+    # changed.
     def state_duration
-      last_transition = @transition_history.last
-      return 'No transitions yet' unless last_transition
-
-      duration = Time.now - last_transition[:timestamp]
-      if duration < 60
-        "#{duration.round(1)}s"
-      elsif duration < 3600
-        "#{(duration / 60).round(1)}m"
-      else
-        "#{(duration / 3600).round(1)}h"
-      end
+      since = @transition_history.last&.fetch(:at) || @created_at
+      StarGates.monotonic_time - since
     end
 
     def state_machine_config
@@ -364,24 +353,17 @@ module StarGates
       end
     end
 
-    def parse_rollout(rollout)
-      case rollout
-      when Numeric then rollout.to_i
-      when String then rollout.delete_suffix('%').to_i
-      else 0
-      end
+    def validated_group(group)
+      return group if group.nil? || group.is_a?(Symbol) || group.is_a?(Proc)
+
+      raise TypeError, "group must be nil, a Symbol or a Proc, got #{group.inspect}"
     end
 
     def group_matches?(context)
-      return false unless group_matcher
-
       case group_matcher
-      when Symbol
-        Array(context[:groups]).include?(group_matcher)
-      when Proc
-        group_matcher.call(context)
-      else
-        false
+      when Symbol then Array(context[:groups]).include?(group_matcher)
+      when Proc then group_matcher.call(context) ? true : false
+      else false
       end
     end
 
@@ -401,7 +383,8 @@ module StarGates
       to_state = transition.to.is_a?(String) ? transition.to.to_sym : transition.to
 
       transition_record = {
-        timestamp: Time.now,
+        at: StarGates.monotonic_time,
+        occurred_at: StarGates.wall_time,
         from_state: from_state,
         to_state: to_state,
         event: transition.event,
@@ -411,16 +394,9 @@ module StarGates
 
       @transition_history << transition_record
 
-      # Keep only the last 50 transitions to prevent memory bloat
-      return unless @transition_history.size > 50
+      return unless @transition_history.size > TRANSITIONS_KEPT
 
-      @transition_history.replace(@transition_history.last(50))
-    end
-  end
-
-  class PercentageHelper
-    def self.percent(value)
-      value
+      @transition_history.replace(@transition_history.last(TRANSITIONS_KEPT))
     end
   end
 end

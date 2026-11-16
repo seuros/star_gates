@@ -4,7 +4,7 @@ class CircuitsController < ApplicationController
   def index
     circuits = BreakerMachines.registry.all_circuits.map do |circuit|
       stats = circuit.stats
-      config = circuit.configuration
+      policy = circuit.policy
 
       {
         name: circuit.name,
@@ -12,10 +12,11 @@ class CircuitsController < ApplicationController
         failure_count: stats.failure_count,
         success_count: stats.success_count,
         last_failure_at: stats.last_failure_at,
-        config: {
-          failure_threshold: config[:failure_threshold],
-          failure_window: config[:failure_window],
-          reset_timeout: config[:reset_timeout]
+        policy: {
+          failure_threshold: policy.threshold.count,
+          failure_rate: policy.threshold.rate,
+          window: policy.window,
+          cooldown: policy.recovery.cooldown
         }
       }
     end

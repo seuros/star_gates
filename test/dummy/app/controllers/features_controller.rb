@@ -26,7 +26,7 @@ class FeaturesController < ApplicationController
         gate_status: gate.status,
         introspection: feature_introspection(feature)
       }
-    rescue StarGates::GateNotFoundError
+    rescue KeyError
       render json: { error: "Feature '#{feature_name}' not found" }, status: :not_found
     end
   end
@@ -47,7 +47,7 @@ class FeaturesController < ApplicationController
         context: context,
         activated_at: Time.current
       }
-    rescue StarGates::GateNotFoundError
+    rescue KeyError
       render json: { error: "Feature '#{feature_name}' not found" }, status: :not_found
     rescue StandardError => e
       render json: { error: e.message }, status: :internal_server_error

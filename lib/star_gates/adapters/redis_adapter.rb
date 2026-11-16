@@ -4,12 +4,18 @@ require_relative 'base_adapter'
 
 module StarGates
   module Adapters
+    # TTLs (`default_ttl`, `expires_in:`) are Integer nanoseconds, rounded up
+    # to Redis's milliseconds at the boundary.
     class RedisAdapter < BaseAdapter
+      NS_PER_MS = 1_000_000
+      DEFAULT_TTL = 3600 * 1_000_000_000
+      private_constant :NS_PER_MS, :DEFAULT_TTL
+
       def initialize(config = {})
         super
         @redis = config[:redis] || redis_from_config
         @key_prefix = config[:key_prefix] || 'star_gates'
-        @default_ttl = config[:default_ttl] || 3600 # 1 hour
+        @default_ttl = config[:default_ttl] || DEFAULT_TTL
       end
 
       def store(key, value)
@@ -27,7 +33,7 @@ module StarGates
       end
 
       def exists?(key)
-        @redis.exists?(prefixed_key(key)).positive?
+        @redis.exists(prefixed_key(key)).positive?
       end
 
       def cache_fetch(key, expires_in: nil, &block)
@@ -38,19 +44,13 @@ module StarGates
           deserialize(cached)
         elsif block_given?
           value = block.call
-          if value
-            serialized = serialize(value)
-            ttl = expires_in || @default_ttl
-            @redis.setex(prefixed, ttl, serialized)
-          end
+          write_expiring(prefixed, value, expires_in) if value
           value
         end
       end
 
       def cache_write(key, value, expires_in: nil)
-        serialized = serialize(value)
-        ttl = expires_in || @default_ttl
-        @redis.setex(prefixed_key(key), ttl, serialized)
+        write_expiring(prefixed_key(key), value, expires_in)
       end
 
       def cache_delete(key)
@@ -78,6 +78,11 @@ module StarGates
       end
 
       private
+
+      def write_expiring(key, value, expires_in)
+        ttl = expires_in || @default_ttl
+        @redis.set(key, serialize(value), px: (ttl + NS_PER_MS - 1) / NS_PER_MS)
+      end
 
       def prefixed_key(key)
         "#{@key_prefix}:#{key}"

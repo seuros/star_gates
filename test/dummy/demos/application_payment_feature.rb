@@ -8,7 +8,7 @@ module StarGates
     class ApplicationPaymentFeature < StarGates::ApplicationStarGate
       # Configure this feature class using ActiveSupport::Configurable
       configure 'advanced_payment_processing',
-                timeout: 5.0,
+                timeout: 5_000_000_000,
                 retry_count: 3,
                 circuit_breaker_threshold: 10,
                 performance_monitoring: true,
@@ -234,7 +234,7 @@ if __FILE__ == $PROGRAM_NAME
   puts '🔍 Enhanced ApplicationStarGate Introspection:'
   puts "Configuration summary: #{feature.configuration_summary}"
   puts "Performance stats: #{feature.performance_stats}"
-  puts "Feature name: #{feature.feature_identifier}"
+  puts "Feature name: #{feature.feature_name}"
   puts "Environment: #{StarGates.configuration.environment}"
 
   # Show complete introspection data
@@ -249,7 +249,7 @@ if __FILE__ == $PROGRAM_NAME
     puts "\n📈 Transition History:"
     feature.transition_history(limit: 5)[:transitions].each_with_index do |transition, i|
       puts "  #{i + 1}. #{transition[:from_state]} → #{transition[:to_state]} " \
-           "(#{transition[:event]}) - #{transition[:duration_since].round(2)}s ago"
+           "(#{transition[:event]}) - #{transition[:age]}ns ago"
     end
   end
 

@@ -18,8 +18,9 @@ module StarGates
       @gates[name.to_sym]
     end
 
-    def fetch(name, default = nil)
-      @gates.fetch(name.to_sym, default)
+    # KeyError for an unknown name unless a default or block is given.
+    def fetch(name, *default, &)
+      @gates.fetch(name.to_sym, *default, &)
     end
 
     def include?(name)

@@ -54,8 +54,8 @@ class TestController < ApplicationController
     payment_circuit = @service.circuit(:payment_gateway)
     email_circuit = @service.circuit(:email_service)
 
-    payment_circuit.reset! if payment_circuit.open? || payment_circuit.half_open?
-    email_circuit.reset! if email_circuit.open? || email_circuit.half_open?
+    payment_circuit.reset if payment_circuit.open? || payment_circuit.half_open?
+    email_circuit.reset if email_circuit.open? || email_circuit.half_open?
 
     render json: {
       message: 'Circuits reset',

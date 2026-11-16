@@ -5,6 +5,9 @@ require_relative '../projections/feature_projection'
 
 module StarGates
   module Hexagonal
+    # Commands answer the aggregate, or a refusal symbol and change nothing:
+    # :not_found, the aggregate's own refusals (:invalid_transition,
+    # :stale_state) and the store's (:version_conflict).
     class FeatureService
       def initialize(repository:, projection:, event_store:)
         @repository = repository
@@ -13,52 +16,32 @@ module StarGates
         setup_event_subscriptions
       end
 
-      # Commands
+      # The feature, created unless it exists. A creation that loses a race
+      # answers the winner's feature.
       def create_feature(feature_id, rollout: 0, group: nil, metadata: {})
         aggregate = @repository.find_or_create(feature_id)
+        return aggregate if aggregate.created?
 
-        unless aggregate.created?
-          aggregate.create(rollout: rollout, group: group, metadata: metadata)
-          @repository.save(aggregate)
-        end
-
-        aggregate
+        aggregate.create(rollout: rollout, group: group, metadata: metadata)
+        saved = @repository.save(aggregate, expected_version: aggregate.version)
+        saved.is_a?(Symbol) ? @repository.find(feature_id) : aggregate
       end
 
       def change_feature_state(feature_id, from_state, to_state, event_name, context = {})
-        aggregate = @repository.find(feature_id)
-        raise FeatureNotFoundError, "Feature #{feature_id} not found" unless aggregate
-
-        aggregate.change_state(from_state, to_state, event_name, context)
-        @repository.save(aggregate)
-
-        aggregate
+        command(feature_id) { |aggregate| aggregate.change_state(from_state, to_state, event_name, context) }
       end
 
       def update_feature_configuration(feature_id, changes)
-        aggregate = @repository.find(feature_id)
-        raise FeatureNotFoundError, "Feature #{feature_id} not found" unless aggregate
-
-        aggregate.update_configuration(changes)
-        @repository.save(aggregate)
-
-        aggregate
+        command(feature_id) { |aggregate| aggregate.update_configuration(changes) }
       end
 
+      # `execution_time` in Integer nanoseconds.
       def record_feature_execution(feature_id, context, result, execution_time)
-        aggregate = @repository.find(feature_id)
-        return unless aggregate # Silently skip if feature doesn't exist
-
-        aggregate.record_execution(context, result, execution_time)
-        @repository.save(aggregate)
+        command(feature_id) { |aggregate| aggregate.record_execution(context, result, execution_time) }
       end
 
       def record_feature_evaluation(feature_id, context, eligible, reason)
-        aggregate = @repository.find(feature_id)
-        return unless aggregate # Silently skip if feature doesn't exist
-
-        aggregate.record_evaluation(context, eligible, reason)
-        @repository.save(aggregate)
+        command(feature_id) { |aggregate| aggregate.record_evaluation(context, eligible, reason) }
       end
 
       # Queries (delegated to projection)
@@ -80,6 +63,10 @@ module StarGates
 
       def recent_transitions(limit: 10)
         @projection.recent_transitions(limit: limit)
+      end
+
+      def transition_count
+        @projection.transition_count
       end
 
       def feature_exists?(feature_id)
@@ -108,14 +95,25 @@ module StarGates
 
       private
 
+      # Loads the aggregate, applies the block's command and saves it under
+      # the version it was loaded at, so a concurrent writer is refused.
+      def command(feature_id)
+        aggregate = @repository.find(feature_id)
+        return :not_found unless aggregate
+
+        outcome = yield aggregate
+        return outcome if outcome.is_a?(Symbol)
+
+        saved = @repository.save(aggregate, expected_version: aggregate.version)
+        saved.is_a?(Symbol) ? saved : aggregate
+      end
+
       def setup_event_subscriptions
         # Subscribe to all events to update projections
         @event_store.subscribe do |event|
           @projection.handle_event(event)
         end
       end
-
-      class FeatureNotFoundError < StandardError; end
     end
   end
 end

@@ -3,13 +3,20 @@
 class ExternalApiService
   include BreakerMachines::DSL
 
+  NS_PER_SECOND = 1_000_000_000
+  # Opens after 3 failures in a minute; probes again after 30 seconds.
+  PAYMENT_POLICY = BreakerMachines::Policy.new(BreakerMachines::Threshold.new(3, nil, 0), 60 * NS_PER_SECOND,
+                                               BreakerMachines::Recovery.new(30 * NS_PER_SECOND, 0.0, 1, 1), nil)
+  # Opens at a 50% failure rate over at least 10 calls in two minutes.
+  EMAIL_POLICY = BreakerMachines::Policy.new(BreakerMachines::Threshold.new(nil, 0.5, 10), 120 * NS_PER_SECOND,
+                                             BreakerMachines::Recovery.new(60 * NS_PER_SECOND, 0.0, 1, 1), nil)
+
   def circuit(name)
     case name
     when :payment_gateway
       dynamic_circuit(:payment_gateway, global: true) do
-        threshold failures: 3, within: 1.minute
-        reset_after 30.seconds
-        timeout 10.seconds
+        policy PAYMENT_POLICY
+        timeout 10 * NS_PER_SECOND
 
         fallback do |_error|
           {
@@ -29,8 +36,7 @@ class ExternalApiService
       end
     when :email_service
       dynamic_circuit(:email_service, global: true) do
-        threshold failure_rate: 0.5, minimum_calls: 10, within: 2.minutes
-        reset_after 1.minute
+        policy EMAIL_POLICY
 
         fallback do |error|
           # Don't retry emails, just log
@@ -82,13 +88,13 @@ class ExternalApiService
     {
       payment_gateway: {
         available: !circuit(:payment_gateway).open?,
-        state: payment_stats[:state],
-        failure_count: payment_stats[:failure_count]
+        state: payment_stats.state,
+        failure_count: payment_stats.failure_count
       },
       email_service: {
         available: !circuit(:email_service).open?,
-        state: email_stats[:state],
-        failure_count: email_stats[:failure_count]
+        state: email_stats.state,
+        failure_count: email_stats.failure_count
       }
     }
   end

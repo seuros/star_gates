@@ -43,13 +43,13 @@ class BattleShip < BaseShip
 
   def configure_gates
     super
-    define_system(:weapons, threshold: 2, within: 30.seconds, reset_after: 20.seconds,
+    define_system(:weapons, policy(2, seconds(30), seconds(20)),
                   fallback: method(:engage_backup_weapons))
-    define_system(:shields, threshold: 1, within: 1.minute, reset_after: 45.seconds,
+    define_system(:shields, policy(1, seconds(60), seconds(45)),
                   fallback: method(:divert_power_to_hull_plating))
-    define_system(:targeting_computer, threshold: 3, within: 45.seconds, reset_after: 30.seconds,
+    define_system(:targeting_computer, policy(3, seconds(45), seconds(30)),
                   fallback: method(:use_manual_targeting))
-    define_system(:navigation, threshold: 10, within: 2.minutes, reset_after: 15.seconds,
+    define_system(:navigation, policy(10, seconds(120), seconds(15)),
                   fallback: method(:engage_evasive_pattern))
   end
 

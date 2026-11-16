@@ -75,18 +75,20 @@ class TestFeature < Minitest::Test
     assert_equal 25, 25.percent
   end
 
-  def test_feature_string_rollout_parsing
-    feature1 = StarGates::Feature.new(rollout: '50%')
-    feature2 = StarGates::Feature.new(rollout: '75')
+  def test_string_rollout_is_a_type_error
+    assert_raises(TypeError) { StarGates::Feature.new(rollout: '50%') }
+  end
 
-    # Features are disabled by default
-    refute feature1.enabled?
-    refute feature2.enabled?
+  def test_group_must_be_a_symbol_or_proc
+    assert_equal :beta, StarGates::Feature.new(group: :beta).group_matcher
+    assert_raises(TypeError) { StarGates::Feature.new(group: 'beta') }
+  end
 
-    # Once enabled, they work
-    feature1.enable
-    feature2.enable
-    assert feature1.enabled?
-    assert feature2.enabled?
+  def test_created_at_is_monotonic_nanoseconds
+    before = StarGates.monotonic_time
+    feature = StarGates::Feature.new
+
+    assert_kind_of Integer, feature.created_at
+    assert_operator feature.created_at, :>=, before
   end
 end

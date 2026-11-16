@@ -1,17 +1,19 @@
 # frozen_string_literal: true
 
-require 'active_support/ordered_options'
 require 'active_support/core_ext/class/attribute'
 require 'active_support/core_ext/hash/deep_merge'
 require 'active_support/core_ext/hash/indifferent_access'
+require 'active_support/core_ext/string/inflections'
 require 'active_support/concern'
 require 'active_support/notifications'
 require_relative 'configuration'
 
 module StarGates
   class ApplicationStarGate < Feature
-    # Use ActiveSupport class attributes instead of custom implementation
-    class_attribute :feature_name
+    # The configured name; nil until `configure(name)`. Instances answer
+    # #feature_name, which falls back to the class name, never nil.
+    class_attribute :feature_name, instance_accessor: false
+    class_attribute :options, default: {}.freeze, instance_accessor: false
     class_attribute :telemetry_tags, default: {}
     class_attribute :state_configs, default: {}
 
@@ -20,7 +22,7 @@ module StarGates
       @instance_config = ActiveSupport::HashWithIndifferentAccess.new(options)
 
       # Merge with class-level config using deep_merge
-      @merged_config = self.class.config.to_h.with_indifferent_access.deep_merge(@instance_config)
+      @merged_config = self.class.options.with_indifferent_access.deep_merge(@instance_config)
 
       # Use configuration defaults if not provided
       rollout ||= @merged_config[:default_rollout] || 0
@@ -33,11 +35,9 @@ module StarGates
       @default_config = ActiveSupport::HashWithIndifferentAccess.new(state_configs[:disabled] || {})
       @canary_config = ActiveSupport::HashWithIndifferentAccess.new(state_configs[:canary] || {})
 
-      # Setup telemetry if enabled
-      setup_telemetry if telemetry_enabled?
-
-      # Setup error handling
-      setup_error_handling if error_reporting_enabled?
+      # Counters exist whatever telemetry says now: it is read per call and
+      # may be turned on after construction.
+      setup_counters
     end
 
     # Enhanced state-specific methods with instrumentation and telemetry
@@ -63,10 +63,6 @@ module StarGates
       instrument_config_access(key, context) do
         super(key, context)
       end
-    end
-
-    def config
-      @config ||= self.class.config.inheritable_copy
     end
 
     def timeout
@@ -103,10 +99,8 @@ module StarGates
       }
     end
 
-    # Public method to get feature identifier
-    def feature_identifier
-      self.class.feature_name || self.class.name.demodulize.underscore
-    end
+    # The configured name, else Feature's (the class name).
+    def feature_name = self.class.feature_name || super
 
     # Feature-specific configuration with state awareness
     def feature_config
@@ -128,10 +122,10 @@ module StarGates
 
       {
         average_execution_time: average_execution_time,
-        median_execution_time: latency.quantile(0.5),
-        p95_execution_time: latency.quantile(0.95),
-        p99_execution_time: latency.quantile(0.99),
-        total_executions: @execution_count || 0,
+        median_execution_time: latency_quantile(0.5),
+        p95_execution_time: latency_quantile(0.95),
+        p99_execution_time: latency_quantile(0.99),
+        total_executions: @execution_count,
         error_rate: calculate_error_rate,
         last_execution: @last_execution_time
       }
@@ -144,20 +138,11 @@ module StarGates
         configuration: configuration_summary,
         performance: performance_stats,
         environment: StarGates.configuration.environment,
-        feature_name: self.class.feature_name || feature_name
+        feature_name: feature_name
       )
     end
 
     class << self
-      # Each class reads through to its parent's options and writes only its own.
-      def config
-        @config ||= if superclass.respond_to?(:config)
-                      superclass.config.inheritable_copy
-                    else
-                      ActiveSupport::InheritableOptions.new
-                    end
-      end
-
       def configure(name = nil, **options)
         self.feature_name = name if name
 
@@ -168,14 +153,12 @@ module StarGates
         # Extract telemetry tags
         self.telemetry_tags = extract_telemetry_tags(options)
 
-        remaining_options = options.except(*state_specific[:extracted_keys])
-        remaining_options.each do |key, value|
-          config.send("#{key}=", value)
-        end
+        self.options = self.options.merge(options.except(*state_specific[:extracted_keys])).freeze
       end
 
-      def with_timeout(seconds, **options)
-        configure(timeout: seconds, **options)
+      # `timeout` in Integer nanoseconds.
+      def with_timeout(timeout, **options)
+        configure(timeout: timeout, **options)
       end
 
       def with_circuit_breaker(threshold: 5, **options)
@@ -183,13 +166,13 @@ module StarGates
       end
 
       def for_team(team_name, **options)
-        self.telemetry_tags = { team: team_name }
         configure(**options)
+        self.telemetry_tags = { team: team_name }.merge(telemetry_tags)
       end
 
       def critical_feature(**options)
         configure(
-          timeout: 1.0,
+          timeout: 1_000_000_000,
           retry_count: 5,
           circuit_breaker_threshold: 10,
           performance_monitoring: true,
@@ -199,7 +182,7 @@ module StarGates
 
       def experimental_feature(**options)
         configure(
-          timeout: 10.0,
+          timeout: 10_000_000_000,
           retry_count: 1,
           performance_monitoring: true,
           **options
@@ -241,52 +224,40 @@ module StarGates
       @merged_config[:error_reporting]
     end
 
-    def setup_telemetry
+    def setup_counters
       @execution_count = 0
       @error_count = 0
       @last_execution_time = nil
     end
 
-    def setup_error_handling
-      # Setup error tracking and reporting
-    end
-
     def instrument_execution(context)
       return yield unless telemetry_enabled?
 
-      # Use ActiveSupport::Notifications for instrumentation
       ActiveSupport::Notifications.instrument('star_gates.feature.execute',
-                                              feature: feature_identifier,
-                                              status: status,
+                                              feature: feature_name, status: status,
                                               context: context) do |payload|
-        start_time = Time.now
-        begin
-          result = yield
-          execution_time = Time.now - start_time
-          record_successful_execution(execution_time)
+        timed_execution(payload, context) { yield }
+      end
+    end
 
-          payload[:success] = true
-          payload[:execution_time_ms] = (execution_time * 1000).round(2)
-
-          result
-        rescue StandardError => e
-          execution_time = Time.now - start_time
-          record_failed_execution(execution_time, e)
-
-          payload[:success] = false
-          payload[:execution_time_ms] = (execution_time * 1000).round(2)
-          payload[:error] = e.class.name
-
-          raise
-        ensure
-          StarGates.telemetry&.record_feature_execution(
-            feature_identifier,
-            status,
-            !defined?(e),
-            payload[:execution_time_ms],
-            context
-          )
-        end
+    # Times the block in monotonic Integer nanoseconds and reports it whether
+    # it returns or raises.
+    def timed_execution(payload, context)
+      started = StarGates.monotonic_time
+      succeeded = false
+      begin
+        result = yield
+        succeeded = true
+        result
+      rescue StandardError => e
+        payload[:error] = e.class.name
+        raise
+      ensure
+        execution_time = StarGates.monotonic_time - started
+        succeeded ? record_successful_execution(execution_time) : record_failed_execution(execution_time)
+        payload[:success] = succeeded
+        payload[:execution_time] = execution_time
+        StarGates.telemetry&.record_feature_execution(feature_name, status, succeeded, execution_time, context)
       end
     end
 
@@ -295,7 +266,7 @@ module StarGates
 
       # Use ActiveSupport::Notifications for UI access tracking
       ActiveSupport::Notifications.instrument('star_gates.ui_component.access',
-                                              feature: feature_identifier,
+                                              feature: feature_name,
                                               context: context) do |payload|
         result = yield
         payload[:component] = result
@@ -303,7 +274,7 @@ module StarGates
         StarGates.telemetry&.record_counter(
           'star_gates.ui_component.access',
           1,
-          tags: telemetry_tags.merge(component: result, feature: feature_identifier)
+          tags: telemetry_tags.merge(component: result, feature: feature_name)
         )
 
         result
@@ -315,7 +286,7 @@ module StarGates
 
       # Use ActiveSupport::Notifications for config access tracking
       ActiveSupport::Notifications.instrument('star_gates.config.access',
-                                              feature: feature_identifier,
+                                              feature: feature_name,
                                               config_key: key,
                                               context: context) do |payload|
         result = yield
@@ -324,26 +295,36 @@ module StarGates
         StarGates.telemetry&.record_counter(
           'star_gates.config.access',
           1,
-          tags: telemetry_tags.merge(config_key: key, feature: feature_identifier)
+          tags: telemetry_tags.merge(config_key: key, feature: feature_name)
         )
 
         result
       end
     end
 
-    def with_timeout(seconds, &)
+    # Runs the block within `timeout` Integer nanoseconds (nil: no limit of
+    # its own), narrowed by the ambient deadline. A budget already spent does
+    # not run the block: Timeout.timeout(0) would mean no limit at all.
+    def with_timeout(timeout, &)
       DeadlineMachines.check!
-      budget = DeadlineMachines.clamp_sleep(seconds)
-      DeadlineMachines.with_deadline(budget) { Timeout.timeout(budget, &) }
+      budget = timeout.nil? ? DeadlineMachines.remaining : DeadlineMachines.clamp_sleep(timeout)
+      return yield if budget.nil?
+      raise timed_out(budget) unless budget.positive?
+
+      DeadlineMachines.with_deadline(budget) { Timeout.timeout(Rational(budget, NS_PER_SECOND), &) }
     rescue Timeout::Error
-      raise StarGates::UnavailableError, "Feature #{feature_identifier} timed out after #{budget}s"
+      raise timed_out(budget)
+    end
+
+    def timed_out(budget)
+      UnavailableError.new(feature_name, :exceeded, "Feature #{feature_name} timed out after #{budget}ns")
     end
 
     def record_successful_execution(duration)
       record_execution(duration)
     end
 
-    def record_failed_execution(duration, _error)
+    def record_failed_execution(duration)
       return unless performance_monitoring_enabled?
 
       @error_count += 1
@@ -352,6 +333,8 @@ module StarGates
 
     # Cluster budget for the latency digest; error is about one part in this.
     LATENCY_COMPRESSION = 100
+    NS_PER_SECOND = 1_000_000_000
+    private_constant :LATENCY_COMPRESSION, :NS_PER_SECOND
 
     def record_execution(duration)
       return unless performance_monitoring_enabled?
@@ -359,67 +342,47 @@ module StarGates
       latency.add(duration)
       @latency_total = latency_total + duration
       @execution_count += 1
-      @last_execution_time = Time.now
+      @last_execution_time = StarGates.monotonic_time
     end
 
     def average_execution_time
-      return 0 if @execution_count.nil? || @execution_count.zero?
+      return if @execution_count.zero?
 
       latency_total / @execution_count
+    end
+
+    # A latency quantile in Integer nanoseconds, nil before any execution.
+    def latency_quantile(quantile)
+      return if @execution_count.zero?
+
+      latency.quantile(quantile).round
     end
 
     # Telemetry and performance monitoring are separate switches, so the digest
     # is built where it is used rather than in either setup path.
     def latency
-      @latency ||= ProbabilisticMachines::TDigest.new(compression: LATENCY_COMPRESSION)
+      @latency ||= ProbabilisticMachines::TDigest.new(LATENCY_COMPRESSION)
     end
 
     def latency_total
-      @latency_total ||= 0.0
+      @latency_total ||= 0
     end
 
     def calculate_error_rate
-      return 0 if @execution_count.nil? || @execution_count.zero?
+      return 0 if @execution_count.zero?
 
       (@error_count.to_f / @execution_count * 100).round(2)
     end
 
     def telemetry_tags
       base_tags = {
-        feature: feature_identifier,
+        feature: feature_name,
         state: status,
         environment: StarGates.configuration.environment
       }
 
       class_tags = self.class.telemetry_tags || {}
       base_tags.merge(class_tags)
-    end
-
-    # State-specific configuration overrides
-    def apply_state_specific_config
-      case status
-      when 'disabled'
-        @current_config = @default_config
-      when 'canary'
-        @current_config = @canary_config.any? ? @canary_config : @feature_config
-      when 'enabled'
-        @current_config = @feature_config
-      end
-    end
-  end
-end
-
-# Add string extensions for better naming
-unless String.method_defined?(:demodulize)
-  class String
-    def demodulize
-      split('::').last
-    end
-
-    def underscore
-      gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2')
-        .gsub(/([a-z\d])([A-Z])/, '\1_\2')
-        .downcase
     end
   end
 end

@@ -116,7 +116,7 @@ event_store = feature_service.instance_variable_get(:@event_store)
 payment_events = event_store.get_events('payment_v2')
 puts "Payment feature events: #{payment_events.size}"
 payment_events.each_with_index do |event, i|
-  puts "  #{i + 1}. #{event.event_type} (#{event.occurred_at.strftime('%H:%M:%S')})"
+  puts "  #{i + 1}. #{event.event_type} (#{Time.at(Rational(event.occurred_at, 1_000_000_000)).strftime('%H:%M:%S')})"
 end
 
 # 9. Demonstrate aggregate reconstruction from events
@@ -137,7 +137,7 @@ puts "\n📜 Complete Transition History..."
 reconstructed_payment.transition_history.each_with_index do |transition, i|
   puts "#{i + 1}. #{transition[:from_state]} → #{transition[:to_state]} via #{transition[:event_name]}"
   puts "   Context: #{transition[:context]}" if transition[:context] && !transition[:context].empty?
-  puts "   Time: #{transition[:occurred_at].strftime('%H:%M:%S.%L')}"
+  puts "   Time: #{Time.at(Rational(transition[:occurred_at], 1_000_000_000)).strftime('%H:%M:%S.%L')}"
 end
 
 # 11. Health check

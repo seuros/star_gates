@@ -2,6 +2,8 @@
 
 module StarGates
   module Adapters
+    # Storage, caching and messaging port. `expires_in:` is Integer
+    # nanoseconds; an adapter without expiry ignores it.
     class BaseAdapter
       def initialize(config = {})
         @config = config

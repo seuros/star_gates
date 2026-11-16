@@ -51,7 +51,7 @@ class TestGate < Minitest::Test
   end
 
   def test_gate_with_circuit_breaker
-    circuit = StarGates::Circuit.new(threshold: 1, within: 30.seconds)
+    circuit = StarGates::Circuit.new(breaker_policy(1, within: seconds(30)))
     gate = StarGates::Gate.new(
       :circuit_gate,
       circuit: circuit,
@@ -67,7 +67,7 @@ class TestGate < Minitest::Test
   def test_gate_status_reporting
     feature = StarGates::Feature.new(rollout: 100)
     feature.enable # Enable the feature explicitly
-    circuit = StarGates::Circuit.new(threshold: 5)
+    circuit = StarGates::Circuit.new(breaker_policy)
     gate = StarGates::Gate.new(
       :status_gate,
       feature: feature,
@@ -179,5 +179,68 @@ class TestGate < Minitest::Test
 
     result = gate.enabled_for?(key: 1)
     assert [true, false].include?(result)
+  end
+
+  def test_an_ineligible_gate_without_fallback_says_why
+    gate = StarGates::Gate.new(:off_gate, feature: StarGates::Feature.new, run_block: -> { :never })
+
+    error = assert_raises(StarGates::UnavailableError) { gate.call }
+    assert_equal :ineligible, error.refusal
+    assert_equal :off_gate, error.gate
+    assert_nil error.cause
+  end
+
+  # Bug: the gate swallowed the primary's exception and raised
+  # UnavailableError outside the rescue, so the original failure was lost.
+  def test_a_failing_primary_without_fallback_keeps_its_exception_as_the_cause
+    gate = StarGates::Gate.new(:failing_gate, run_block: -> { raise ArgumentError, 'bad input' })
+
+    error = assert_raises(StarGates::UnavailableError) { gate.call }
+    assert_equal :failed, error.refusal
+    assert_instance_of ArgumentError, error.cause
+    assert_equal 'bad input', error.cause.message
+  end
+
+  def test_an_open_circuit_carries_the_breaker_refusal
+    circuit = StarGates::Circuit.new(breaker_policy(1))
+    gate = StarGates::Gate.new(:open_gate, circuit: circuit, run_block: -> { raise 'down' })
+    assert_raises(StarGates::UnavailableError) { gate.call }
+
+    error = assert_raises(StarGates::UnavailableError) { gate.call }
+    assert_equal :open, error.refusal
+    assert_instance_of BreakerMachines::CircuitOpenError, error.cause
+  end
+
+  def test_a_timed_out_feature_carries_exceeded
+    klass = Class.new(StarGates::ApplicationStarGate) { configure('slow', timeout: 0) }
+    feature = klass.new(rollout: 100)
+    feature.enable
+    gate = StarGates::Gate.new(:slow_gate, feature: feature, run_block: -> { :never })
+
+    error = assert_raises(StarGates::UnavailableError) { gate.call }
+    assert_equal :exceeded, error.refusal
+  end
+
+  def test_status_reports_last_failure_at_in_nanoseconds
+    circuit = StarGates::Circuit.new(breaker_policy)
+    gate = StarGates::Gate.new(:failing_gate, circuit: circuit, run_block: -> { raise 'down' },
+                                              fallback_block: -> { :fallback })
+
+    assert_nil gate.status[:last_failure_at]
+    assert_equal :fallback, gate.call
+    assert_kind_of Integer, gate.status[:last_failure_at]
+  end
+
+  def test_readers
+    run = -> { :run }
+    fallback = -> { :fallback }
+    gate = StarGates::Gate.new(:readers, run_block: run, fallback_block: fallback)
+
+    assert_equal :readers, gate.name
+    assert_nil gate.feature
+    assert_nil gate.circuit
+    assert_same run, gate.run_block
+    assert_same fallback, gate.fallback_block
+    assert gate.closed?
   end
 end

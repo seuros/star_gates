@@ -69,7 +69,7 @@ class TestEventSourcing < Minitest::Test
       feature_id,
       { key: 123 },
       { success: true },
-      15.5
+      15_500_000
     )
 
     aggregate = @repository.find(feature_id)
@@ -79,7 +79,7 @@ class TestEventSourcing < Minitest::Test
     execution = executions.first
     assert_equal({ key: 123 }, execution[:context])
     assert_equal({ success: true }, execution[:result])
-    assert_equal 15.5, execution[:execution_time]
+    assert_equal 15_500_000, execution[:execution_time]
   end
 
   def test_feature_evaluation_recording
@@ -216,16 +216,30 @@ class TestEventSourcing < Minitest::Test
     feature_id = 'test_feature'
     @feature_service.create_feature(feature_id)
 
-    # Try invalid event for valid states
-    assert_raises(StarGates::Hexagonal::FeatureAggregate::InvalidTransitionError) do
-      @feature_service.change_feature_state(feature_id, :disabled, :enabled, :invalid_event)
-    end
+    assert_equal :invalid_transition,
+                 @feature_service.change_feature_state(feature_id, :disabled, :enabled, :invalid_event)
 
-    # Try invalid transition (canary -> canary doesn't make sense)
     @feature_service.change_feature_state(feature_id, :disabled, :canary, :rollout_canary)
-    assert_raises(StarGates::Hexagonal::FeatureAggregate::InvalidTransitionError) do
-      @feature_service.change_feature_state(feature_id, :canary, :canary, :rollout_canary)
-    end
+    assert_equal :invalid_transition,
+                 @feature_service.change_feature_state(feature_id, :canary, :canary, :rollout_canary)
+    assert_equal 2, @event_store.get_version(feature_id)
+  end
+
+  def test_a_stale_from_state_is_refused
+    feature_id = 'test_feature'
+    @feature_service.create_feature(feature_id)
+    @feature_service.change_feature_state(feature_id, :disabled, :enabled, :enable)
+
+    assert_equal :stale_state, @feature_service.change_feature_state(feature_id, :disabled, :canary, :rollout_canary)
+    assert_equal :enabled, @feature_service.find_feature(feature_id)[:state]
+  end
+
+  def test_commands_on_a_missing_feature_are_refused
+    assert_equal :not_found, @feature_service.change_feature_state('ghost', :disabled, :enabled, :enable)
+    assert_equal :not_found, @feature_service.update_feature_configuration('ghost', { a: 1 })
+    assert_equal :not_found, @feature_service.record_feature_execution('ghost', {}, :ok, 1_000)
+    assert_equal :not_found, @feature_service.record_feature_evaluation('ghost', {}, true, 'ok')
+    assert_equal 0, @event_store.get_version('ghost')
   end
 
   def test_concurrent_updates_with_optimistic_locking
@@ -242,9 +256,24 @@ class TestEventSourcing < Minitest::Test
 
     # Second update should fail due to version mismatch
     aggregate2.change_state(:disabled, :enabled, :enable)
-    assert_raises(StarGates::EventStore::ConcurrencyError) do
-      @repository.save(aggregate2, expected_version: 1)
-    end
+    assert_equal :version_conflict, @repository.save(aggregate2, expected_version: 1)
+    assert_equal :canary, @repository.find(feature_id).current_state
+  end
+
+  # Version check and append happen under one lock: of many writers racing
+  # with the same expected version, exactly one is stored.
+  def test_racing_appends_store_exactly_one
+    @feature_service.create_feature('race')
+    outcomes = Array.new(8) do
+      Thread.new do
+        event = StarGates::Events::FeatureConfigurationChanged.new(aggregate_id: 'race', configuration_changes: {})
+        @event_store.append('race', [event], expected_version: 1)
+      end
+    end.map(&:value)
+
+    assert_equal [1], outcomes.grep(Integer)
+    assert_equal 7, outcomes.count(:version_conflict)
+    assert_equal 2, @event_store.get_version('race')
   end
 
   def test_event_store_health_check

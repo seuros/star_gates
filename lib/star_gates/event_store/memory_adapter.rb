@@ -12,8 +12,13 @@ module StarGates
         @mutex = Mutex.new
       end
 
-      def append(aggregate_id, events)
+      # Stores the events and answers true, or false without storing them
+      # when `expected_version` is given and is not the current one. Checked
+      # and stored under one lock, so two writers cannot both pass.
+      def append(aggregate_id, events, expected_version = nil)
         @mutex.synchronize do
+          return false unless expected_version.nil? || @versions[aggregate_id] == expected_version
+
           events.each do |event|
             # Increment version
             @versions[aggregate_id] += 1
@@ -27,6 +32,7 @@ module StarGates
             # Store globally for cross-aggregate queries
             @global_events << versioned_event
           end
+          true
         end
       end
 

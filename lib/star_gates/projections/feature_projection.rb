@@ -2,7 +2,18 @@
 
 module StarGates
   module Projections
+    # The read model built from feature events. Instants are the events'
+    # wall-clock Integer nanoseconds.
+    #
+    # Records are normalised on read, whatever the adapter hands back: a
+    # feature and a transition have Symbol keys, and their state and event
+    # names are Symbols, so an adapter that serialises to JSON (RedisAdapter:
+    # String keys, String values) reads like the memory one. Caller data
+    # nested inside (metadata, context) comes back as the adapter keeps it.
     class FeatureProjection
+      NAMED_FIELDS = %i[state from_state to_state event_name].freeze
+      private_constant :NAMED_FIELDS
+
       def initialize(adapter)
         @adapter = adapter
         @mutex = Mutex.new
@@ -26,7 +37,7 @@ module StarGates
 
       # Query methods
       def find_feature(feature_id)
-        @adapter.fetch("feature:#{feature_id}")
+        normalized(@adapter.fetch("feature:#{feature_id}"))
       end
 
       def find_features_by_state(state)
@@ -50,9 +61,11 @@ module StarGates
       end
 
       def recent_transitions(limit: 10)
-        transitions = @adapter.fetch('recent_transitions') || []
-        transitions.last(limit).reverse
+        stored_transitions.last(limit).reverse
       end
+
+      # How many transitions the projection keeps (the newest 100).
+      def transition_count = stored_transitions.size
 
       def feature_exists?(feature_id)
         @adapter.exists?("feature:#{feature_id}")
@@ -93,7 +106,7 @@ module StarGates
 
       def handle_state_changed(event)
         @mutex.synchronize do
-          feature_data = @adapter.fetch("feature:#{event.aggregate_id}")
+          feature_data = find_feature(event.aggregate_id)
           return unless feature_data
 
           old_state = feature_data[:state]
@@ -117,7 +130,7 @@ module StarGates
 
       def handle_configuration_changed(event)
         @mutex.synchronize do
-          feature_data = @adapter.fetch("feature:#{event.aggregate_id}")
+          feature_data = find_feature(event.aggregate_id)
           return unless feature_data
 
           feature_data[:updated_at] = event.occurred_at
@@ -127,7 +140,7 @@ module StarGates
 
       def handle_execution_recorded(event)
         @mutex.synchronize do
-          feature_data = @adapter.fetch("feature:#{event.aggregate_id}")
+          feature_data = find_feature(event.aggregate_id)
           return unless feature_data
 
           feature_data[:execution_count] += 1
@@ -138,7 +151,7 @@ module StarGates
 
       def handle_evaluation_recorded(event)
         @mutex.synchronize do
-          feature_data = @adapter.fetch("feature:#{event.aggregate_id}")
+          feature_data = find_feature(event.aggregate_id)
           return unless feature_data
 
           feature_data[:evaluation_count] += 1
@@ -176,7 +189,7 @@ module StarGates
       end
 
       def update_recent_transitions(event)
-        transitions = @adapter.fetch('recent_transitions') || []
+        transitions = stored_transitions
 
         transition_data = {
           feature_id: event.aggregate_id,
@@ -207,12 +220,26 @@ module StarGates
         counts
       end
 
-      def recent_transitions_count(days: 7)
-        transitions = @adapter.fetch('recent_transitions') || []
-        cutoff = Time.now - (days * 24 * 60 * 60)
+      RECENT_SPAN = 7 * 24 * 60 * 60 * 1_000_000_000
+      private_constant :RECENT_SPAN
 
-        transitions.count do |transition|
-          Time.parse(transition[:occurred_at].to_s) > cutoff
+      # Transitions in the last week of wall-clock time.
+      def recent_transitions_count
+        cutoff = StarGates.wall_time - RECENT_SPAN
+        stored_transitions.count { |transition| transition[:occurred_at] > cutoff }
+      end
+
+      def stored_transitions
+        (@adapter.fetch('recent_transitions') || []).map { |transition| normalized(transition) }
+      end
+
+      # The record with Symbol keys and Symbol state and event names.
+      def normalized(record)
+        return unless record
+
+        record.to_h do |key, value|
+          key = key.to_sym
+          [key, NAMED_FIELDS.include?(key) && value.is_a?(String) ? value.to_sym : value]
         end
       end
 

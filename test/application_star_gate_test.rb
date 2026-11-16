@@ -9,7 +9,7 @@ class TestApplicationStarGate < Minitest::Test
 
     # Call configure on the class
     @test_class.configure 'test_feature',
-                          timeout: 2.0,
+                          timeout: 2_000_000_000,
                           retry_count: 2,
                           performance_monitoring: true,
                           instrumentation: true,
@@ -31,7 +31,7 @@ class TestApplicationStarGate < Minitest::Test
 
     # Test that ActiveSupport::Configurable worked
     assert_equal 'test_feature', @test_class.feature_name
-    assert_equal 2.0, feature.timeout
+    assert_equal 2_000_000_000, feature.timeout
     assert_equal 2, feature.retry_count
     assert feature.performance_monitoring_enabled?
   end
@@ -67,8 +67,7 @@ class TestApplicationStarGate < Minitest::Test
   end
 
   def test_activesupport_notifications
-    skip 'Telemetry not configured in test' unless StarGates.telemetry
-
+    StarGates.configure_telemetry(Class.new(StarGates::Telemetry::TelemetryAdapter) { def send_metric(*); end }.new)
     notifications_received = []
 
     # Subscribe to ActiveSupport::Notifications
@@ -90,11 +89,13 @@ class TestApplicationStarGate < Minitest::Test
     assert_equal 'test result', result
 
     # Check that notifications were sent
-    feature_notifications = notifications_received.select { |n| n[:name].include?('star_gates') }
-    refute_empty feature_notifications if StarGates.telemetry
-
-    # Clean up subscription
-    ActiveSupport::Notifications.unsubscribe(subscription)
+    execution = notifications_received.find { |n| n[:name] == 'star_gates.feature.execute' }
+    assert execution
+    assert_equal true, execution[:payload][:success]
+    assert_kind_of Integer, execution[:payload][:execution_time]
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscription) if subscription
+    StarGates.configure_telemetry(nil)
   end
 
   def test_telemetry_tags
@@ -114,12 +115,12 @@ class TestApplicationStarGate < Minitest::Test
 
     # Test configuration summary
     config_summary = feature.configuration_summary
-    assert_equal 2.0, config_summary[:timeout]
+    assert_equal 2_000_000_000, config_summary[:timeout]
     assert_equal 2, config_summary[:retry_count]
     assert config_summary[:performance_monitoring]
 
-    # Test feature identifier
-    assert_equal 'test_feature', feature.feature_identifier
+    # Test feature name
+    assert_equal 'test_feature', feature.feature_name
 
     # Test enhanced to_h output
     introspection = feature.to_h
@@ -131,29 +132,29 @@ class TestApplicationStarGate < Minitest::Test
 
   def test_configuration_inheritance
     # Test that configuration is properly inherited and merged
-    feature = @test_class.new(rollout: 50, timeout: 3.0) # Override timeout at instance level
+    feature = @test_class.new(rollout: 50, timeout: 3_000_000_000) # Override timeout at instance level
 
     # Instance-level override should take precedence
-    assert_equal 3.0, feature.timeout
+    assert_equal 3_000_000_000, feature.timeout
     # Class-level config should still work
     assert_equal 2, feature.retry_count
   end
 
   def test_subclass_config_inherits_without_leaking_upward
     child = Class.new(@test_class)
-    child.configure(timeout: 9.0, cache_ttl: 60)
+    child.configure(timeout: 9_000_000_000, cache_ttl: 60)
 
-    assert_equal 9.0, child.new.timeout
+    assert_equal 9_000_000_000, child.new.timeout
     assert_equal 2, child.new.retry_count
     assert_equal 60, child.new.cache_ttl
-    assert_equal 2.0, @test_class.new.timeout
+    assert_equal 2_000_000_000, @test_class.new.timeout
     assert_nil @test_class.new.cache_ttl
     assert_nil Class.new(StarGates::ApplicationStarGate).new.timeout
   end
 
   def test_parent_config_set_later_reaches_existing_subclasses
     child = Class.new(@test_class)
-    child.config # materialize before the parent changes
+    child.new # an existing subclass, already used, before the parent changes
     @test_class.configure(circuit_breaker_threshold: 7)
 
     assert_equal 7, child.new.circuit_breaker_threshold

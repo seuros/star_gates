@@ -1,7 +1,12 @@
 # frozen_string_literal: true
 
 module StarGates
+  # Process-wide defaults. `default_timeout` and `cache_ttl` are Integer
+  # nanoseconds.
   class Configuration
+    NS_PER_SECOND = 1_000_000_000
+    private_constant :NS_PER_SECOND
+
     attr_accessor :instrumentation, :telemetry_adapter, :default_timeout, :default_retry_count,
                   :circuit_breaker_threshold, :cache_ttl, :environment, :feature_defaults,
                   :enable_performance_monitoring, :log_level, :error_reporting
@@ -9,10 +14,10 @@ module StarGates
     def initialize
       @instrumentation = true
       @telemetry_adapter = detect_default_telemetry_adapter
-      @default_timeout = 5.0 # seconds
+      @default_timeout = 5 * NS_PER_SECOND
       @default_retry_count = 3
       @circuit_breaker_threshold = 5
-      @cache_ttl = 300 # 5 minutes
+      @cache_ttl = 300 * NS_PER_SECOND
       @environment = detect_environment
       @feature_defaults = {}
       @enable_performance_monitoring = true
@@ -53,9 +58,12 @@ module StarGates
       base_config.merge(feature_specific)
     end
 
-    # Configure feature-specific defaults
+    # Configure feature-specific defaults. Keys are stored as Symbols, so an
+    # override read from YAML (String keys) replaces the Symbol-keyed default
+    # it names instead of sitting beside it; a key that is neither a String
+    # nor a Symbol is a TypeError.
     def configure_feature(feature_name, config = {})
-      feature_defaults[feature_name.to_sym] = config
+      feature_defaults[feature_name.to_sym] = config.to_h { |key, value| [config_key(key), value] }
     end
 
     # Load from YAML file (Rails-style)
@@ -87,21 +95,21 @@ module StarGates
       case environment
       when :development
         @log_level = :debug
-        @default_timeout = 10.0 # More generous timeout for dev
+        @default_timeout = 10 * NS_PER_SECOND
         @telemetry_adapter = :memory
       when :test
         @instrumentation = false
         @telemetry_adapter = :memory
-        @default_timeout = 1.0  # Fast tests
+        @default_timeout = 1 * NS_PER_SECOND
         @enable_performance_monitoring = false
       when :production
         @log_level = :warn
-        @default_timeout = 2.0  # Strict timeout for prod
+        @default_timeout = 2 * NS_PER_SECOND
         @telemetry_adapter = :prometheus
         @error_reporting = true
       when :staging
         @log_level = :info
-        @default_timeout = 5.0
+        @default_timeout = 5 * NS_PER_SECOND
         @telemetry_adapter = :prometheus
       end
     end
@@ -124,6 +132,12 @@ module StarGates
     end
 
     private
+
+    def config_key(key)
+      return key.to_sym if key.is_a?(String) || key.is_a?(Symbol)
+
+      raise TypeError, "feature config key must be a String or Symbol, got #{key.inspect}"
+    end
 
     def detect_environment
       if defined?(Rails) && Rails.respond_to?(:env)
@@ -162,8 +176,11 @@ module StarGates
     configuration.load_from_file(file_path) if file_path
   end
 
+  # The application's config/star_gates.yml: under Rails.root inside a Rails
+  # application, else under the working directory. Rails can be loaded with
+  # no application (Rails.root nil), so that falls back too.
   def self.default_config_file_path
-    if defined?(Rails)
+    if defined?(Rails) && Rails.respond_to?(:root) && Rails.root
       Rails.root.join('config', 'star_gates.yml')
     else
       File.join(Dir.pwd, 'config', 'star_gates.yml')

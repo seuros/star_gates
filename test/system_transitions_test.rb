@@ -38,13 +38,11 @@ class TestSystemTransitions < Minitest::Test
     assert_equal 1, transitions[:total_found]
 
     transition = transitions[:transitions].first
-    assert_equal 'Feature', transition[:feature_name]
-    assert_equal 'StarGates::Feature', transition[:feature_class]
-    assert_equal :disabled, transition[:from_state]
-    assert_equal :canary, transition[:to_state]
+    assert_equal 'payment_v2', transition[:feature]
+    assert_equal :disabled, transition[:from]
+    assert_equal :canary, transition[:to]
     assert_equal :rollout_canary, transition[:event]
-    assert transition[:timestamp]
-    assert transition[:duration_since] >= 0
+    assert_kind_of Integer, transition[:occurred_at]
   end
 
   def test_recent_transitions_with_multiple_features
@@ -61,7 +59,7 @@ class TestSystemTransitions < Minitest::Test
     assert_equal 3, transitions[:total_found]
 
     # Should be sorted by timestamp descending (most recent first)
-    transition_timestamps = transitions[:transitions].map { |t| t[:timestamp] }
+    transition_timestamps = transitions[:transitions].map { |t| t[:occurred_at] }
     assert_equal transition_timestamps.sort.reverse, transition_timestamps
   end
 
@@ -109,8 +107,9 @@ class TestSystemTransitions < Minitest::Test
 
     # The most recent should be feature3 enable
     most_recent = transitions[:transitions].first
-    assert_equal :disabled, most_recent[:from_state]
-    assert_equal :enabled, most_recent[:to_state]
+    assert_equal 'experimental_feature', most_recent[:feature]
+    assert_equal :disabled, most_recent[:from]
+    assert_equal :enabled, most_recent[:to]
     assert_equal :enable, most_recent[:event]
   end
 
@@ -131,10 +130,9 @@ class TestSystemTransitions < Minitest::Test
 
     # Check that each transition has correct feature metadata
     transitions[:transitions].each do |transition|
-      assert transition[:feature_name]
-      assert_equal 'StarGates::Feature', transition[:feature_class]
-      assert %i[disabled enabled canary].include?(transition[:from_state])
-      assert %i[disabled enabled canary].include?(transition[:to_state])
+      assert %w[payment_v2 dashboard_redesign].include?(transition[:feature])
+      assert %i[disabled enabled canary].include?(transition[:from])
+      assert %i[disabled enabled canary].include?(transition[:to])
       assert %i[enable disable rollout_canary].include?(transition[:event])
     end
   end
@@ -160,8 +158,8 @@ class TestSystemTransitions < Minitest::Test
 
     # Should have captured many transitions without errors
     assert transitions[:total_found].positive?
-    assert(transitions[:transitions].all? { |t| t[:timestamp] })
-    assert(transitions[:transitions].all? { |t| t[:feature_name] })
+    assert(transitions[:transitions].all? { |t| t[:occurred_at] })
+    assert(transitions[:transitions].all? { |t| t[:feature] })
   end
 
   def test_system_introspection_integration
@@ -174,7 +172,7 @@ class TestSystemTransitions < Minitest::Test
     [@feature1, @feature2].each do |feature|
       stats = feature.stats
       assert stats[:total_transitions].positive?
-      refute_equal 'No transitions yet', feature.send(:state_duration)
+      assert_kind_of Integer, stats[:state_duration]
     end
 
     # Check system-level view

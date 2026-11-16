@@ -4,7 +4,26 @@ require_relative '../events/feature_events'
 
 module StarGates
   module Hexagonal
+    # A feature's event-sourced state. Each command answers the event it
+    # recorded, or a refusal symbol and changes nothing: :already_created,
+    # :invalid_transition (no such event between those states), :stale_state
+    # (the feature is not in `from_state`).
+    #
+    # States and event names are Symbols. A String (or any other type) is a
+    # TypeError raised before anything changes: the aggregate never stores a
+    # name it would later fail to match. Wire adapters convert at their own
+    # boundary (JsonrpcRailsAdapter does).
+    #
+    # `version` counts the events the store holds: replayed and saved ones.
     class FeatureAggregate
+      TRANSITIONS = {
+        disabled: { rollout_canary: :canary, enable: :enabled },
+        canary: { enable: :enabled, disable: :disabled },
+        enabled: { disable: :disabled, rollout_canary: :canary }
+      }.freeze
+      TRANSITIONS_KEPT = 50
+      RECORDS_KEPT = 100
+
       attr_reader :id, :version, :uncommitted_events
 
       def initialize(id, events = [])
@@ -19,12 +38,13 @@ module StarGates
 
       # Command: Create feature
       def create(rollout: 0, group: nil, metadata: {})
-        raise ArgumentError, 'Feature already exists' if created?
+        Rollout.validated(rollout)
+        return :already_created if created?
 
         event = Events::FeatureCreated.new(
           aggregate_id: @id,
           data: {
-            rollout_percentage: parse_rollout(rollout),
+            rollout_percentage: rollout,
             group_matcher: group,
             metadata: metadata
           }
@@ -35,9 +55,9 @@ module StarGates
 
       # Command: Change state
       def change_state(from_state, to_state, event_name, context = {})
-        unless can_transition?(from_state, to_state, event_name)
-          raise InvalidTransitionError, "Cannot transition from #{from_state} to #{to_state} via #{event_name}"
-        end
+        { from_state:, to_state:, event_name: }.each { |name, value| symbol!(name, value) }
+        return :invalid_transition unless TRANSITIONS.dig(from_state, event_name) == to_state
+        return :stale_state unless from_state == current_state
 
         event = Events::FeatureStateChanged.new(
           aggregate_id: @id,
@@ -117,8 +137,9 @@ module StarGates
         @state[:evaluations] || []
       end
 
-      # Mark events as committed
+      # The store now holds the uncommitted events.
       def mark_events_as_committed
+        @version += @uncommitted_events.size
         @uncommitted_events.clear
       end
 
@@ -133,19 +154,16 @@ module StarGates
 
       # Load from snapshot
       def self.from_snapshot(snapshot, events_since_snapshot = [])
-        aggregate = allocate
-        aggregate.instance_variable_set(:@id, snapshot[:id])
-        aggregate.instance_variable_set(:@version, snapshot[:version])
-        aggregate.instance_variable_set(:@state, snapshot[:state].dup)
-        aggregate.instance_variable_set(:@uncommitted_events, [])
-
-        # Apply events since snapshot
-        events_since_snapshot.each { |event| aggregate.apply_event(event, from_history: true) }
-
-        aggregate
+        new(snapshot[:id]).tap { |aggregate| aggregate.__send__(:restore, snapshot, events_since_snapshot) }
       end
 
       private
+
+      def restore(snapshot, events)
+        @version = snapshot[:version]
+        @state = snapshot[:state].dup
+        events.each { |event| apply_event(event, from_history: true) }
+      end
 
       def apply_event(event, from_history: false)
         case event
@@ -163,6 +181,7 @@ module StarGates
 
         @version += 1 if from_history
         @uncommitted_events << event unless from_history
+        event
       end
 
       def apply_feature_created(event)
@@ -179,72 +198,47 @@ module StarGates
 
       def apply_state_changed(event)
         @state[:current_state] = event.to_state
-        @state[:transitions] ||= []
-        @state[:transitions] << {
+        @state[:transitions] = append(:transitions, TRANSITIONS_KEPT, {
           from_state: event.from_state,
           to_state: event.to_state,
           event_name: event.event_name,
           context: event.context,
           occurred_at: event.occurred_at
-        }
-
-        # Keep only last 50 transitions for memory efficiency
-        @state[:transitions] = @state[:transitions].last(50) if @state[:transitions].size > 50
+        })
       end
 
       def apply_configuration_changed(event)
-        @state[:configuration] ||= {}
-        @state[:configuration].merge!(event.configuration_changes)
+        @state[:configuration] = configuration.merge(event.configuration_changes)
       end
 
       def apply_execution_recorded(event)
-        @state[:executions] ||= []
-        @state[:executions] << {
+        @state[:executions] = append(:executions, RECORDS_KEPT, {
           context: event.context,
           result: event.result,
           execution_time: event.execution_time,
           occurred_at: event.occurred_at
-        }
-
-        # Keep only last 100 executions
-        @state[:executions] = @state[:executions].last(100) if @state[:executions].size > 100
+        })
       end
 
       def apply_evaluation_recorded(event)
-        @state[:evaluations] ||= []
-        @state[:evaluations] << {
+        @state[:evaluations] = append(:evaluations, RECORDS_KEPT, {
           context: event.context,
           eligible: event.eligible,
           reason: event.reason,
           occurred_at: event.occurred_at
-        }
-
-        # Keep only last 100 evaluations
-        @state[:evaluations] = @state[:evaluations].last(100) if @state[:evaluations].size > 100
+        })
       end
 
-      def can_transition?(from_state, to_state, event_name)
-        # Define valid transitions
-        valid_transitions = {
-          disabled: { rollout_canary: :canary, enable: :enabled },
-          canary: { enable: :enabled, disable: :disabled },
-          enabled: { disable: :disabled, rollout_canary: :canary }
-        }
-
-        allowed_transitions = valid_transitions[from_state.to_sym] || {}
-        allowed_transitions[event_name.to_sym] == to_state.to_sym
+      # A new list, so a snapshot taken earlier keeps its own.
+      def append(key, kept, record)
+        [*@state[key], record].last(kept)
       end
 
-      def parse_rollout(rollout)
-        case rollout
-        when Numeric, String
-          rollout.to_i
-        else
-          0
-        end
-      end
+      def symbol!(name, value)
+        return if value.is_a?(Symbol)
 
-      class InvalidTransitionError < StandardError; end
+        raise TypeError, "#{name} must be a Symbol, got #{value.inspect}"
+      end
     end
   end
 end

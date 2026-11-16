@@ -32,6 +32,9 @@ loader.ignore("#{__dir__}/star_gates/hexagonal")
 loader.ignore("#{__dir__}/star_gates/projections")
 loader.ignore("#{__dir__}/star_gates/telemetry")
 loader.setup
+# Defines StarGates.configuration and StarGates.configure, which no constant
+# reference would autoload.
+require_relative 'star_gates/configuration'
 
 module StarGates
   @registry = Registry.new
@@ -50,11 +53,20 @@ module StarGates
       context.instance_eval(&) if block_given?
     end
 
+    # KeyError for a name with no gate.
     def [](name)
-      gate = registry[name]
-      raise GateNotFoundError, "Gate #{name} not found" unless gate
+      registry.fetch(name)
+    end
 
-      gate
+    # Monotonic Integer nanoseconds: every in-process instant and span.
+    def monotonic_time
+      Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)
+    end
+
+    # Integer nanoseconds since the Unix epoch, for records that outlive the
+    # process (event-sourced events).
+    def wall_time
+      Process.clock_gettime(Process::CLOCK_REALTIME, :nanosecond)
     end
 
     def activate(name, context = {})
@@ -81,8 +93,12 @@ module StarGates
       @test_mode = false
     end
 
+    # Forgets every gate and the configured feature service and telemetry
+    # adapter, so the next caller starts from nothing.
     def reset!
       registry.clear
+      @feature_service = nil
+      @telemetry_adapter = nil
     end
 
     # Instrumentation for feature flag events
@@ -116,7 +132,7 @@ module StarGates
         gate_info = {
           name: name,
           feature: feature&.to_h,
-          circuit: circuit ? circuit_info(circuit) : nil,
+          circuit: circuit&.to_h,
           status: gate.status
         }
 
@@ -143,7 +159,7 @@ module StarGates
         features_by_status: Hash.new(0),
         average_rollout: 0,
         rollout_distribution: {},
-        generated_at: Time.now
+        generated_at: monotonic_time
       }
 
       rollout_percentages = []
@@ -172,7 +188,7 @@ module StarGates
       end
 
       stats[:average_rollout] =
-        rollout_percentages.any? ? (rollout_percentages.sum / rollout_percentages.size).round(2) : 0
+        rollout_percentages.any? ? rollout_percentages.sum.fdiv(rollout_percentages.size).round(2) : 0
 
       stats
     end
@@ -199,46 +215,43 @@ module StarGates
       }
     end
 
-    # Recent state transitions across all features
+    # Recent state transitions across all features, newest first, as
+    # `{ transitions:, total_found:, limit:, generated_at: }` in both modes;
+    # `generated_at` is the monotonic instant. Every transition is
+    # `{ feature:, from:, to:, event:, occurred_at: }` in both modes: `feature`
+    # the String feature id (the gate name without event sourcing), `from`,
+    # `to` and `event` Symbols, `occurred_at` wall-clock Integer nanoseconds.
+    # With event sourcing `total_found` counts the transitions the projection
+    # keeps; otherwise the registered features' transitions.
     def recent_transitions(limit: 10)
-      if feature_service_enabled?
-        feature_service.recent_transitions(limit: limit)
-      else
-        # Fallback to legacy implementation
-        gates = registry.to_h
-        all_transitions = []
-
-        gates.each_value do |gate|
-          feature = gate.feature
-          next unless feature
-
-          feature_transitions = feature.instance_variable_get(:@transition_history)
-          next unless feature_transitions
-
-          all_transitions.concat(feature_transitions.to_a)
-        end
-
-        # Sort by timestamp descending and take the most recent
-        recent = all_transitions.sort_by { |t| -t[:timestamp].to_f }.first(limit)
-
-        {
-          transitions: recent.map do |transition|
-            {
-              timestamp: transition[:timestamp],
-              feature_name: transition[:feature_name],
-              feature_class: transition[:feature_class],
-              from_state: transition[:from_state],
-              to_state: transition[:to_state],
-              event: transition[:event],
-              duration_since: Time.now - transition[:timestamp]
-            }
-          end,
-          total_found: all_transitions.size,
-          limit: limit,
-          generated_at: Time.now
-        }
-      end
+      recent, total = feature_service_enabled? ? projected_transitions(limit) : registered_transitions(limit)
+      { transitions: recent, total_found: total, limit: limit, generated_at: monotonic_time }
     end
+
+    def projected_transitions(limit)
+      recent = feature_service.recent_transitions(limit: limit).map do |transition|
+        transition_entry(transition[:feature_id], transition[:from_state], transition[:to_state],
+                         transition[:event_name], transition[:occurred_at])
+      end
+      [recent, feature_service.transition_count]
+    end
+
+    def registered_transitions(limit)
+      gates = registry.values.select { |gate| gate.feature.respond_to?(:transition_history) }
+      recent = gates.flat_map do |gate|
+        gate.feature.transition_history(limit: limit)[:transitions].map { |transition| [gate.name, transition] }
+      end
+      recent = recent.sort_by { |_, transition| -transition[:at] }.first(limit).map do |name, transition|
+        transition_entry(name, transition[:from_state], transition[:to_state], transition[:event],
+                         transition[:occurred_at])
+      end
+      [recent, gates.sum { |gate| gate.feature.transition_count }]
+    end
+
+    def transition_entry(feature, from, to, event, occurred_at)
+      { feature: feature.to_s, from: from, to: to, event: event, occurred_at: occurred_at }
+    end
+    private :projected_transitions, :registered_transitions, :transition_entry
 
     # Configure the foundational architecture
     def configure_foundation(event_store: nil, adapter: nil, telemetry: nil)
@@ -281,23 +294,6 @@ module StarGates
 
     def configure_telemetry(adapter)
       @telemetry_adapter = adapter
-    end
-
-    # Check if jsonrpc-rails is available
-    def jsonrpc_rails_available?
-      defined?(JSON_RPC) && defined?(ActionController::Base)
-    end
-
-    private
-
-    def circuit_info(circuit)
-      if circuit.respond_to?(:to_h)
-        circuit.to_h
-      elsif circuit.respond_to?(:stats)
-        circuit.stats
-      else
-        { status: circuit.respond_to?(:status) ? circuit.status : 'unknown' }
-      end
     end
   end
 end

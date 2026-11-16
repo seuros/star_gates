@@ -93,9 +93,9 @@ class RMNSAtlasMonkey < ScienceVessel
 
   def configure_gates
     super
-    define_system(:universal_commentary_engine, threshold: 42, within: 420.seconds, reset_after: 3.14159.seconds,
+    define_system(:universal_commentary_engine, policy(42, seconds(420), 3_141_590_000),
                   fallback: method(:provide_generic_wisdom))
-    define_system(:sensor_array, threshold: 1, within: 30.seconds, reset_after: 90.seconds,
+    define_system(:sensor_array, policy(1, seconds(30), seconds(90)),
                   fallback: method(:use_intuition))
   end
 

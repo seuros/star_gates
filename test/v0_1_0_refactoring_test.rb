@@ -8,39 +8,21 @@ require 'tempfile'
 # Tests all critical fixes, security patches, and new features
 class V010RefactoringTest < Minitest::Test
   # ============================================================================
-  # CRITICAL BUG FIX: parse_rollout dead code
+  # Rollouts are Integer percentages
   # ============================================================================
 
-  def test_parse_rollout_percentage_string
-    feature = StarGates::Feature.new(rollout: '50%')
-
-    # The bug was: empty conditional block for '%' check
-    # Before fix: '50%' would parse incorrectly
-    # After fix: properly strips % and converts to integer
-    assert_equal 50, feature.rollout_percentage
+  def test_rollout_is_an_integer_percentage
+    [0, 50, 100].each { |rollout| assert_equal rollout, StarGates::Feature.new(rollout: rollout).rollout_percentage }
   end
 
-  def test_parse_rollout_percentage_string_various_formats
-    {
-      '25%' => 25,
-      '75%' => 75,
-      '100%' => 100,
-      '0%' => 0,
-      '50' => 50,     # without %
-      50 => 50,       # numeric
-      100.0 => 100    # float
-    }.each do |input, expected|
-      feature = StarGates::Feature.new(rollout: input)
-      assert_equal expected, feature.rollout_percentage,
-                   "Failed to parse rollout: #{input.inspect}"
+  def test_rollout_of_another_type_is_a_type_error
+    ['50%', '50', 50.0, nil].each do |rollout|
+      assert_raises(TypeError) { StarGates::Feature.new(rollout: rollout) }
     end
   end
 
-  def test_parse_rollout_edge_cases
-    # Invalid inputs should default to 0
-    assert_equal 0, StarGates::Feature.new(rollout: nil).rollout_percentage
-    assert_equal 0, StarGates::Feature.new(rollout: '').rollout_percentage
-    assert_equal 0, StarGates::Feature.new(rollout: 'invalid').rollout_percentage
+  def test_rollout_outside_a_percentage_is_a_range_error
+    [-1, 101].each { |rollout| assert_raises(RangeError) { StarGates::Feature.new(rollout: rollout) } }
   end
 
   # ============================================================================
@@ -53,7 +35,7 @@ class V010RefactoringTest < Minitest::Test
       file.write(<<~YAML)
         development:
           instrumentation: true
-          default_timeout: 10.0
+          default_timeout: 10_000_000_000
           log_level: :debug
       YAML
       file.rewind
@@ -62,7 +44,7 @@ class V010RefactoringTest < Minitest::Test
       config.load_from_file(file.path)
 
       assert_equal true, config.instrumentation
-      assert_equal 10.0, config.default_timeout
+      assert_equal 10_000_000_000, config.default_timeout
       assert_equal :debug, config.log_level
     end
   end
@@ -186,23 +168,15 @@ class V010RefactoringTest < Minitest::Test
   # ============================================================================
 
   def test_circuit_without_retry_policy
-    circuit = StarGates::Circuit.new(threshold: 2, within: 30)
+    circuit = StarGates::Circuit.new(breaker_policy(2, within: seconds(30)))
 
-    # Should work without retry policy (backward compatible)
     result = circuit.call { 'success' }
     assert_equal 'success', result
   end
 
   def test_circuit_with_retry_policy_success_after_retries
     call_count = 0
-    circuit = StarGates::Circuit.new(
-      threshold: 5,
-      within: 30,
-      retry_config: {
-        max_attempts: 3,
-        base_delay: 0.001 # Fast for tests
-      }
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(5, within: seconds(30)), quick_retry(3))
 
     # Fails twice, succeeds on third attempt
     result = circuit.call do
@@ -218,14 +192,7 @@ class V010RefactoringTest < Minitest::Test
 
   def test_circuit_with_retry_policy_exhausted
     call_count = 0
-    circuit = StarGates::Circuit.new(
-      threshold: 5,
-      within: 30,
-      retry_config: {
-        max_attempts: 3,
-        base_delay: 0.001
-      }
-    )
+    circuit = StarGates::Circuit.new(breaker_policy(5, within: seconds(30)), quick_retry(3))
 
     # Always fails - should exhaust retries
     error = assert_raises(StandardError) do
@@ -251,14 +218,7 @@ class V010RefactoringTest < Minitest::Test
       ActiveSupport::Notifications.subscribe('star_gates.circuit.retry', &subscriber)
 
       call_count = 0
-      circuit = StarGates::Circuit.new(
-        threshold: 5,
-        within: 30,
-        retry_config: {
-          max_attempts: 3,
-          base_delay: 0.001
-        }
-      )
+      circuit = StarGates::Circuit.new(breaker_policy(5, within: seconds(30)), quick_retry(3))
 
       # Fail once, then succeed
       circuit.call do
@@ -281,66 +241,20 @@ class V010RefactoringTest < Minitest::Test
   end
 
   # ============================================================================
-  # REFACTORING: Simplified time parsing
-  # ============================================================================
-
-  def test_circuit_time_parsing_with_numeric_extensions
-    # Should work with Numeric extensions (1.minute, 30.seconds)
-    circuit = StarGates::Circuit.new(
-      threshold: 3,
-      within: 2.minutes,
-      reset_after: 5.minutes
-    )
-
-    assert_equal 120, circuit.within
-    assert_equal 300, circuit.reset_after
-  end
-
-  def test_circuit_time_parsing_with_activesupport_duration
-    skip 'ActiveSupport::Duration not available' unless defined?(ActiveSupport::Duration)
-
-    duration = ActiveSupport::Duration.build(90) # 90 seconds
-    circuit = StarGates::Circuit.new(
-      threshold: 3,
-      within: duration,
-      reset_after: 2.minutes
-    )
-
-    assert_equal 90, circuit.within
-    assert_equal 120, circuit.reset_after
-  end
-
-  def test_circuit_time_parsing_with_plain_integers
-    # Should work with plain integers (backward compatible)
-    circuit = StarGates::Circuit.new(
-      threshold: 3,
-      within: 60,
-      reset_after: 120
-    )
-
-    assert_equal 60, circuit.within
-    assert_equal 120, circuit.reset_after
-  end
-
-  # ============================================================================
   # INTEGRATION: Full stack test with all fixes
   # ============================================================================
 
   def test_full_stack_integration_with_all_fixes
     # Test that all fixes work together
     StarGates.reset!
+    policy = breaker_policy(3, within: seconds(60), reset_after: seconds(30))
+    retry_policy = quick_retry(3)
 
     StarGates.define do
       gate :payment_processor do
-        feature rollout: '75%', group: :premium # Test parse_rollout fix
+        feature rollout: 75.percent, group: :premium
 
-        circuit threshold: 3,
-                within: 1.minute,
-                reset_after: 30.seconds,
-                retry_config: { # Test ChronoMachines integration
-                  max_attempts: 3,
-                  base_delay: 0.001
-                }
+        circuit policy, retry_policy
 
         run { 'payment processed' }
         fallback { 'payment queued' }
@@ -352,7 +266,6 @@ class V010RefactoringTest < Minitest::Test
     # Gate should exist
     assert gate, 'Gate should be registered'
 
-    # Feature should parse 75% correctly (bug fix)
     assert_equal 75, gate.feature.rollout_percentage
 
     # Circuit should have retry policy (new feature)

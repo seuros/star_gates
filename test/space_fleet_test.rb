@@ -55,7 +55,7 @@ class SpaceFleetTest < Minitest::Test
     subscriber = ->(_name, _start, _finish, _id, payload) { events << payload }
 
     ActiveSupport::Notifications.subscribed(subscriber, 'star_gates.circuit.auto_rollback') do
-      warp.circuit.threshold.times do
+      warp.circuit.policy.threshold.count.times do
         assert_equal 'emergency_mode', @ship.engage_warp(:unstable_sector, **@pilot)[:status]
       end
     end
@@ -69,9 +69,9 @@ class SpaceFleetTest < Minitest::Test
 
   def test_repair_keeps_canary_targeting_until_an_operator_enables_full_rollout
     warp = @ship.gate(:warp_drive)
-    warp.circuit.threshold.times { @ship.engage_warp(:unstable_sector, **@pilot) }
+    warp.circuit.policy.threshold.count.times { @ship.engage_warp(:unstable_sector, **@pilot) }
 
-    warp.circuit.reset!
+    warp.circuit.reset
 
     assert_equal 'canary', warp.feature.status
     assert_equal 'engaged', @ship.engage_warp('Alpha Centauri', **@pilot)[:status]
@@ -84,7 +84,7 @@ class SpaceFleetTest < Minitest::Test
   def test_further_failures_disable_an_already_canary_system
     warp = @ship.gate(:warp_drive)
     warp.feature.rollout_canary
-    warp.circuit.threshold.times { @ship.engage_warp(:unstable_sector, **@pilot) }
+    warp.circuit.policy.threshold.count.times { @ship.engage_warp(:unstable_sector, **@pilot) }
 
     assert warp.open?
     assert_equal 'disabled', warp.feature.status
@@ -95,7 +95,7 @@ class SpaceFleetTest < Minitest::Test
     other = Spaceship.new('SG Atlas replica', 'SG-1')
     warp = @ship.gate(:warp_drive)
     other_warp = other.gate(:warp_drive)
-    warp.circuit.threshold.times { @ship.engage_warp(:unstable_sector, **@pilot) }
+    warp.circuit.policy.threshold.count.times { @ship.engage_warp(:unstable_sector, **@pilot) }
 
     refute_equal warp.name, other_warp.name
     refute_same warp.feature, other_warp.feature
@@ -134,12 +134,12 @@ class SpaceFleetTest < Minitest::Test
     battle_ship = BattleShip.new('Prometheus', 'BC-303')
     cargo_ship = CargoShip.new('Cargo One', 'CS-1')
 
-    assert_equal 3, fighter.gate(:engine).circuit.threshold
-    assert_equal 5, freighter.gate(:engine).circuit.threshold
-    assert_equal 5, @ship.gate(:navigation).circuit.threshold
-    assert_equal 10, battle_ship.gate(:navigation).circuit.threshold
-    assert_equal 2, @ship.gate(:life_support).circuit.threshold
-    assert_equal 5, cargo_ship.gate(:life_support).circuit.threshold
+    assert_equal 3, fighter.gate(:engine).circuit.policy.threshold.count
+    assert_equal 5, freighter.gate(:engine).circuit.policy.threshold.count
+    assert_equal 5, @ship.gate(:navigation).circuit.policy.threshold.count
+    assert_equal 10, battle_ship.gate(:navigation).circuit.policy.threshold.count
+    assert_equal 2, @ship.gate(:life_support).circuit.policy.threshold.count
+    assert_equal 5, cargo_ship.gate(:life_support).circuit.policy.threshold.count
 
     freighter.gate(:engine).feature.disable
     assert_equal 'Auxiliary thrusters', freighter.start_engine

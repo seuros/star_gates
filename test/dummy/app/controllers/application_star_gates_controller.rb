@@ -8,7 +8,7 @@ class ApplicationStarGatesController < ApplicationController
     render json: {
       application_features: application_features.map do |feature|
         {
-          name: feature.feature_identifier,
+          name: feature.feature_name,
           class_name: feature.class.name,
           status: feature.status,
           configuration: feature.configuration_summary,
@@ -29,7 +29,7 @@ class ApplicationStarGatesController < ApplicationController
       introspection: feature.to_h,
       configuration_summary: feature.configuration_summary,
       performance_stats: feature.performance_stats,
-      feature_identifier: feature.feature_identifier,
+      feature_name: feature.feature_name,
       telemetry_tags: feature.class.telemetry_tags,
       config_access: {
         timeout: feature.timeout,
@@ -51,7 +51,7 @@ class ApplicationStarGatesController < ApplicationController
     return render_not_found unless feature
 
     context = params[:context] || {}
-    start_time = Time.current
+    started = StarGates.monotonic_time
 
     begin
       result = feature.execute(context) do
@@ -64,14 +64,14 @@ class ApplicationStarGatesController < ApplicationController
         feature_id: params[:id],
         result: result,
         context: context,
-        execution_time_ms: ((Time.current - start_time) * 1000).round(2),
+        execution_time: StarGates.monotonic_time - started,
         performance_stats: feature.performance_stats,
         executed_at: Time.current
       }
     rescue StandardError => e
       render json: {
         error: e.message,
-        execution_time_ms: ((Time.current - start_time) * 1000).round(2)
+        execution_time: StarGates.monotonic_time - started
       }, status: :internal_server_error
     end
   end
@@ -126,7 +126,7 @@ class ApplicationStarGatesController < ApplicationController
 
   def find_application_feature(identifier)
     find_application_star_gate_features.find do |feature|
-      feature.feature_identifier == identifier ||
+      feature.feature_name == identifier ||
         feature.class.name.underscore.gsub('_', '-') == identifier
     end
   end

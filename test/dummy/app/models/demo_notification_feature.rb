@@ -2,7 +2,7 @@
 
 class DemoNotificationFeature < StarGates::ApplicationStarGate
   configure 'demo_notification_system',
-            timeout: 2.0,
+            timeout: 2_000_000_000,
             retry_count: 2,
             performance_monitoring: true,
             instrumentation: true,
