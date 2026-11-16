@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/seuros/star_gates/compare/v0.4.0...v0.5.0) (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* code that relied on `require 'star_gates'` to load Rails must require Rails itself.
+
+### Features
+
+* require 'star_gates' no longer loads Rails ([188ffee](https://github.com/seuros/star_gates/commit/188ffeef2bc8c06f9781c5161a63a958f2244e66))
+
 ## [0.4.0](https://github.com/seuros/star_gates/compare/v0.3.2...v0.4.0) (2026-11-16)
 
 
