@@ -304,12 +304,3 @@ class Numeric
     self
   end
 end
-
-# Optional jsonrpc-rails integration
-begin
-  require 'rails'
-  require 'jsonrpc-rails'
-  require_relative 'star_gates/jsonrpc_rails_adapter'
-rescue LoadError
-  # jsonrpc-rails or Rails not available, skip integration
-end

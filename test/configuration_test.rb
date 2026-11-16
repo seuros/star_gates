@@ -2,6 +2,9 @@
 
 require 'test_helper'
 require 'tempfile'
+# The default-path test needs Rails loaded with no application; star_gates
+# never loads Rails itself.
+require 'rails'
 
 class ConfigurationTest < Minitest::Test
   NS_PER_SECOND = 1_000_000_000

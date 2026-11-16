@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'test_helper'
+require 'open3'
 
 # The StarGates module functions.
 class StarGatesModuleTest < Minitest::Test
@@ -14,6 +15,25 @@ class StarGatesModuleTest < Minitest::Test
 
   def define_canary(name, rollout)
     StarGates.define { gate(name) { feature rollout: rollout } }.feature.rollout_canary
+  end
+
+  # A library gem must not load Rails: `require 'star_gates'` in a plain
+  # process leaves Rails and jsonrpc-rails unloaded and the configuration on
+  # the plain-Ruby defaults; the JSON-RPC adapter still autoloads on use.
+  def test_requiring_star_gates_loads_no_rails
+    script = <<~RUBY
+      require 'star_gates'
+      abort 'Rails loaded' if defined?(Rails)
+      abort 'railties loaded' if $LOADED_FEATURES.any? { |path| path.include?('/railties-') }
+      abort 'jsonrpc-rails loaded' if defined?(JSON_RPC)
+      puts StarGates.configuration.environment
+      puts StarGates::JsonrpcRailsAdapter.available?.inspect
+    RUBY
+    env = { 'RAILS_ENV' => nil, 'RACK_ENV' => nil, 'RUBY_ENV' => nil }
+    output, errors, status = Open3.capture3(env, Gem.ruby, '-I', File.expand_path('../lib', __dir__), '-e', script)
+
+    assert status.success?, "#{output}\n#{errors}"
+    assert_equal %w[development nil], output.lines(chomp: true)
   end
 
   def test_clocks_are_integer_nanoseconds

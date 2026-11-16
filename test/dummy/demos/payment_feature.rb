@@ -87,7 +87,7 @@ module StarGates
       end
 
       def logger
-        @logger ||= defined?(Rails) ? Rails.logger : nil
+        @logger ||= Rails.logger if defined?(Rails) && Rails.respond_to?(:logger)
       end
 
       def generate_transaction_id

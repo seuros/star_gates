@@ -171,6 +171,13 @@ the dispatch stay Rails'.
 
 ## Rails
 
+`require 'star_gates'` never loads Rails. Inside an application that already loaded
+it (Bundler.require runs after `require 'rails'`), `StarGates.configuration` takes its
+environment from `Rails.env` and `StarGates.load_config!` reads
+`Rails.root/config/star_gates.yml`; both are checked when first used, so there is no
+Railtie to require. Outside Rails they fall back to `RACK_ENV`/`RAILS_ENV`/`RUBY_ENV`
+and the working directory.
+
 Define gates in an initializer and call them from controllers or services:
 
 ```ruby
